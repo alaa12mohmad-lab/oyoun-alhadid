@@ -1,0 +1,67 @@
+import { useState } from 'react'
+import { useAuth } from './hooks/useAuth'
+import Sidebar from './components/shared/Sidebar'
+import LoginPage from './pages/LoginPage'
+import AdminDashboard from './pages/AdminDashboard'
+import EquipmentPage from './pages/EquipmentPage'
+import SitesPage from './pages/SitesPage'
+import SuppliersPage from './pages/SuppliersPage'
+import UsersPage from './pages/UsersPage'
+import ReportsPage from './pages/ReportsPage'
+import LogPage from './pages/LogPage'
+import SupervisorDashboard from './pages/SupervisorDashboard'
+
+function LoadingScreen() {
+  return (
+    <div className="loading-page">
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '2rem', marginBottom: 16 }}>⚙️</div>
+        <div className="spinner" />
+        <div style={{ color: 'var(--text-3)', fontSize: '0.85rem', marginTop: 8 }}>جاري التحميل...</div>
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
+  const { user, userData, loading } = useAuth()
+  const [activePage, setActivePage] = useState('dashboard')
+
+  if (loading) return <LoadingScreen />
+  if (!user || !userData) return <LoginPage />
+
+  const role = userData.role
+
+  function renderPage() {
+    if (role === 'admin') {
+      switch (activePage) {
+        case 'dashboard': return <AdminDashboard setActivePage={setActivePage} />
+        case 'equipment': return <EquipmentPage />
+        case 'sites': return <SitesPage />
+        case 'suppliers': return <SuppliersPage />
+        case 'users': return <UsersPage />
+        case 'reports': return <ReportsPage />
+        default: return <AdminDashboard setActivePage={setActivePage} />
+      }
+    }
+    if (role === 'supervisor') {
+      switch (activePage) {
+        case 'dashboard': return <SupervisorDashboard setActivePage={setActivePage} />
+        case 'log': return <LogPage />
+        case 'history': return <ReportsPage />
+        default: return <SupervisorDashboard setActivePage={setActivePage} />
+      }
+    }
+    // viewer
+    return <ReportsPage />
+  }
+
+  return (
+    <div className="app-layout">
+      <Sidebar activePage={activePage} setActivePage={setActivePage} />
+      <main className="main-content">
+        {renderPage()}
+      </main>
+    </div>
+  )
+}

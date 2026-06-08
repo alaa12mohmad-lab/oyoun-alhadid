@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuth() { return request.auth != null; }
+    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isAdmin() { return isAuth() && getUserData().role == 'admin'; }
+    function isSupervisor() { return isAuth() && getUserData().role == 'supervisor'; }
+    function isViewer() { return isAuth() && getUserData().role == 'viewer'; }
+    function userSiteId() { return getUserData().siteId; }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Sites - admin manages, all authenticated can read
+    match /sites/{siteId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // Suppliers - admin manages, all can read
+    match /suppliers/{supplierId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // Equipment - admin manages, supervisors/viewers can read
+    match /equipment/{equipmentId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // Logs - supervisors write their own site, all can read
+    match /logs/{logId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && (isAdmin() || (isSupervisor() && request.resource.data.siteId == userSiteId()));
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSupervisor() && resource.data.siteId == userSiteId());
+    }
+  }
+}
