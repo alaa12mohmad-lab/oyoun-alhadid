@@ -2,32 +2,34 @@ import { useAuth } from '../../hooks/useAuth'
 
 const adminNav = [
   { section: 'الرئيسية', items: [
-    { id: 'dashboard', label: 'لوحة التحكم', icon: '📊' },
-    { id: 'log', label: 'تسجيل الدوام', icon: '⏱️' },
-    { id: 'reports', label: 'التقارير الأسبوعية', icon: '📋' },
-    { id: 'pdf', label: 'تقرير PDF مخصص', icon: '📄' },
+    { id: 'dashboard',  label: 'لوحة التحكم',        icon: '📊' },
+    { id: 'quickentry', label: 'إدخال سريع أسبوعي',  icon: '⚡' },
+    { id: 'log',        label: 'تسجيل يومي',          icon: '⏱️' },
+    { id: 'reports',    label: 'التقارير الأسبوعية',  icon: '📋' },
+    { id: 'pdf',        label: 'تقرير PDF مخصص',      icon: '📄' },
   ]},
   { section: 'الإدارة', items: [
-    { id: 'equipment', label: 'المعدات', icon: '🏗️' },
-    { id: 'sites', label: 'المواقع', icon: '📍' },
-    { id: 'suppliers', label: 'الموردون', icon: '🏢' },
-    { id: 'users', label: 'المستخدمون', icon: '👥' },
+    { id: 'equipment',  label: 'المعدات',              icon: '🏗️' },
+    { id: 'sites',      label: 'المواقع',              icon: '📍' },
+    { id: 'suppliers',  label: 'الموردون',             icon: '🏢' },
+    { id: 'users',      label: 'المستخدمون',           icon: '👥' },
   ]},
 ]
 
 const supervisorNav = [
   { section: 'الرئيسية', items: [
-    { id: 'dashboard', label: 'موقعي', icon: '📊' },
-    { id: 'log', label: 'تسجيل الدوام', icon: '⏱️' },
-    { id: 'history', label: 'التقارير الأسبوعية', icon: '📋' },
-    { id: 'pdf', label: 'تقرير PDF', icon: '📄' },
+    { id: 'dashboard',  label: 'موقعي',                icon: '📊' },
+    { id: 'quickentry', label: 'إدخال سريع أسبوعي',  icon: '⚡' },
+    { id: 'log',        label: 'تسجيل يومي',          icon: '⏱️' },
+    { id: 'history',    label: 'التقارير الأسبوعية',  icon: '📋' },
+    { id: 'pdf',        label: 'تقرير PDF',            icon: '📄' },
   ]},
 ]
 
 const viewerNav = [
   { section: 'التقارير', items: [
     { id: 'reports', label: 'التقارير الأسبوعية', icon: '📋' },
-    { id: 'pdf', label: 'تقرير PDF', icon: '📄' },
+    { id: 'pdf',     label: 'تقرير PDF',           icon: '📄' },
   ]},
 ]
 
@@ -38,9 +40,11 @@ export default function Sidebar({ activePage, setActivePage }) {
   const role = userData.role
   const nav = role === 'admin' ? adminNav : role === 'supervisor' ? supervisorNav : viewerNav
 
-  const roleBadge = role === 'admin' ? { label: 'مدير النظام', cls: 'badge-gold' }
-    : role === 'supervisor' ? { label: 'مشرف موقع', cls: 'badge-blue' }
-    : { label: 'مشاهد', cls: 'badge-gray' }
+  const roleBadge = role === 'admin'
+    ? { label: 'مدير النظام', cls: 'badge-gold' }
+    : role === 'supervisor'
+    ? { label: 'مشرف موقع',  cls: 'badge-blue' }
+    : { label: 'مشاهد',       cls: 'badge-gray' }
 
   const initials = (userData.name || userData.email || 'U').charAt(0).toUpperCase()
 
@@ -79,7 +83,9 @@ export default function Sidebar({ activePage, setActivePage }) {
           <div className="user-avatar">{initials}</div>
           <div>
             <div className="user-name">{userData.name || userData.email?.split('@')[0]}</div>
-            <span className={`badge ${roleBadge.cls}`} style={{ fontSize: '0.68rem', padding: '1px 7px' }}>{roleBadge.label}</span>
+            <span className={`badge ${roleBadge.cls}`} style={{ fontSize: '0.68rem', padding: '1px 7px' }}>
+              {roleBadge.label}
+            </span>
             {userData.siteName && (
               <div className="user-role" style={{ marginTop: 2 }}>📍 {userData.siteName}</div>
             )}
