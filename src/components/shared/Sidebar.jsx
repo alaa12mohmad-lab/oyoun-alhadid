@@ -3,7 +3,9 @@ import { useAuth } from '../../hooks/useAuth'
 const adminNav = [
   { section: 'الرئيسية', items: [
     { id: 'dashboard', label: 'لوحة التحكم', icon: '📊' },
+    { id: 'log', label: 'تسجيل الدوام', icon: '⏱️' },
     { id: 'reports', label: 'التقارير الأسبوعية', icon: '📋' },
+    { id: 'pdf', label: 'تقرير PDF مخصص', icon: '📄' },
   ]},
   { section: 'الإدارة', items: [
     { id: 'equipment', label: 'المعدات', icon: '🏗️' },
@@ -17,13 +19,15 @@ const supervisorNav = [
   { section: 'الرئيسية', items: [
     { id: 'dashboard', label: 'موقعي', icon: '📊' },
     { id: 'log', label: 'تسجيل الدوام', icon: '⏱️' },
-    { id: 'history', label: 'سجل الدوام', icon: '📋' },
+    { id: 'history', label: 'التقارير الأسبوعية', icon: '📋' },
+    { id: 'pdf', label: 'تقرير PDF', icon: '📄' },
   ]},
 ]
 
 const viewerNav = [
   { section: 'التقارير', items: [
     { id: 'reports', label: 'التقارير الأسبوعية', icon: '📋' },
+    { id: 'pdf', label: 'تقرير PDF', icon: '📄' },
   ]},
 ]
 

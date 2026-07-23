@@ -10,6 +10,7 @@ import UsersPage from './pages/UsersPage'
 import ReportsPage from './pages/ReportsPage'
 import LogPage from './pages/LogPage'
 import SupervisorDashboard from './pages/SupervisorDashboard'
+import PdfReportPage from './pages/PdfReportPage'
 
 function LoadingScreen() {
   return (
@@ -41,6 +42,8 @@ export default function App() {
         case 'suppliers': return <SuppliersPage />
         case 'users': return <UsersPage />
         case 'reports': return <ReportsPage />
+        case 'log': return <LogPage />
+        case 'pdf': return <PdfReportPage />
         default: return <AdminDashboard setActivePage={setActivePage} />
       }
     }
@@ -49,11 +52,15 @@ export default function App() {
         case 'dashboard': return <SupervisorDashboard setActivePage={setActivePage} />
         case 'log': return <LogPage />
         case 'history': return <ReportsPage />
+        case 'pdf': return <PdfReportPage />
         default: return <SupervisorDashboard setActivePage={setActivePage} />
       }
     }
     // viewer
-    return <ReportsPage />
+    switch (activePage) {
+      case 'pdf': return <PdfReportPage />
+      default: return <ReportsPage />
+    }
   }
 
   return (
