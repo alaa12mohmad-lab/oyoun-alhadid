@@ -10,7 +10,6 @@ const monthName  = format(new Date(), 'MMMM yyyy')
 const today      = format(new Date(), 'yyyy-MM-dd')
 
 function getExpectedDays(eq) {
-  const { differenceInDays, parseISO } = require ? null : null
   const start = eq.startDate && eq.startDate > monthStart ? eq.startDate : monthStart
   const end   = eq.retiredDate && eq.retiredDate < today  ? eq.retiredDate : today
   if (start > end) return 0
