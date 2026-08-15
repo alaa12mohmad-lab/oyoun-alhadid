@@ -51,7 +51,7 @@ export default function EquipmentPage() {
       supplierId: item.supplierId,
       hourlyRate: item.hourlyRate,
       type: item.type || '',
-      startDate: item.startDate || today,
+      startDate: item.startDate || '',
       notes: item.notes || '',
     })
     setEditId(item.id); setModal(true)
