@@ -16,8 +16,6 @@ export default function ReportsPage() {
   const [weekDate, setWeekDate] = useState(new Date())
   const [loading, setLoading]   = useState(true)
   const [activeTab, setActiveTab] = useState('equipment')
-
-  // Pre-calculated summaries
   const [eqRows, setEqRows]     = useState([])
   const [siteRows, setSiteRows] = useState([])
   const [supRows, setSupRows]   = useState([])
@@ -39,7 +37,6 @@ export default function ReportsPage() {
     setWeekStart(startStr)
     setWeekEnd(endStr)
     try {
-      // 1. Load equipment + logs in parallel
       const [eqSnap, logsSnap] = await Promise.all([
         getDocs(collection(db, 'equipment')),
         getDocs(query(
@@ -55,10 +52,8 @@ export default function ReportsPage() {
       const eqMap  = {}
       eqList.forEach(e => eqMap[e.id] = e)
 
-      // 2. Find which equipment IDs appear in logs
       const usedEqIds = [...new Set(logs.map(l => l.equipmentId))]
 
-      // 3. Load priceHistory only for used equipment
       const histories = {}
       await Promise.all(usedEqIds.map(async eqId => {
         const snap = await getDocs(
@@ -67,16 +62,12 @@ export default function ReportsPage() {
         histories[eqId] = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       }))
 
-      // 4. Helper: get effective rate for a log
-     function getRate(log) {
-  const history  = histories[log.equipmentId] || []
-  const fallback = eqMap[log.equipmentId]?.hourlyRate || log.hourlyRate || 0
-  const rate     = getPriceForDate(history, log.date, fallback)
-  console.log('getRate:', log.equipmentName, log.date, 'history:', history.length, 'rate:', rate, 'fallback:', fallback)
-  return rate
-}
+      function getRate(log) {
+        const history  = histories[log.equipmentId] || []
+        const fallback = eqMap[log.equipmentId]?.hourlyRate || log.hourlyRate || 0
+        return getPriceForDate(history, log.date, fallback)
+      }
 
-      // 5. Build equipment summary
       const eqSummary = {}
       logs.forEach(log => {
         const eq   = eqMap[log.equipmentId] || {}
@@ -98,7 +89,6 @@ export default function ReportsPage() {
         .map(s => ({ ...s, days: s.days.size }))
         .sort((a, b) => b.cost - a.cost)
 
-      // 6. Site summary
       const siteSummary = {}
       logs.forEach(log => {
         const key  = log.siteName || '—'
@@ -110,7 +100,6 @@ export default function ReportsPage() {
       })
       const siteList = Object.values(siteSummary).sort((a, b) => b.cost - a.cost)
 
-      // 7. Supplier summary
       const supSummary = {}
       logs.forEach(log => {
         const key  = log.supplierName || '—'
@@ -124,11 +113,9 @@ export default function ReportsPage() {
         .map(s => ({ ...s, equipment: [...s.equipment] }))
         .sort((a, b) => b.cost - a.cost)
 
-      // 8. Totals
       const tHours = eqList2.reduce((s, r) => s + r.hours, 0)
       const tCost  = eqList2.reduce((s, r) => s + r.cost,  0)
 
-      // 9. Store raw logs with rate for Excel export
       const logsWithRate = logs.map(l => ({
         ...l, effectiveRate: getRate(l), cost: (l.hours || 0) * getRate(l)
       }))
@@ -186,7 +173,6 @@ export default function ReportsPage() {
         <button className="btn btn-secondary" onClick={exportExcel} disabled={logsCount === 0}>📥 تصدير Excel</button>
       </div>
 
-      {/* Week selector */}
       <div className="report-week-selector">
         <button className="btn btn-secondary btn-sm" onClick={() => setWeekDate(d => subWeeks(d, 1))}>→ السابق</button>
         <div className="week-display">{format(start, 'dd/MM/yyyy')} — {format(end, 'dd/MM/yyyy')}</div>
@@ -194,7 +180,6 @@ export default function ReportsPage() {
         <button className="btn btn-secondary btn-sm" onClick={() => setWeekDate(new Date())}>الحالي</button>
       </div>
 
-      {/* Summary */}
       <div className="report-summary">
         <div className="summary-box"><div className="val">{loading ? '...' : totalHours.toFixed(1)}</div><div className="lbl">إجمالي الساعات</div></div>
         <div className="summary-box"><div className="val">{loading ? '...' : totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</div><div className="lbl">إجمالي التكلفة (ريال)</div></div>
@@ -202,7 +187,6 @@ export default function ReportsPage() {
         <div className="summary-box"><div className="val">{loading ? '...' : logsCount}</div><div className="lbl">سجل دوام</div></div>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--steel-3)', padding: 4, borderRadius: 'var(--radius-sm)', width: 'fit-content' }}>
         <button style={tabStyle('equipment')} onClick={() => setActiveTab('equipment')}>🏗️ المعدات</button>
         <button style={tabStyle('sites')}     onClick={() => setActiveTab('sites')}>📍 المواقع</button>
@@ -212,7 +196,6 @@ export default function ReportsPage() {
       {loading ? <div className="spinner" /> : (
         <div className="card">
           <div className="table-wrap">
-            {/* Equipment */}
             {activeTab === 'equipment' && (
               eqRows.length === 0
                 ? <div className="empty-state"><div className="empty-icon">📊</div><div className="empty-text">لا توجد سجلات</div></div>
@@ -238,8 +221,6 @@ export default function ReportsPage() {
                     </tbody>
                   </table>
             )}
-
-            {/* Sites */}
             {activeTab === 'sites' && (
               siteRows.length === 0
                 ? <div className="empty-state"><div className="empty-icon">📍</div><div className="empty-text">لا توجد بيانات</div></div>
@@ -268,8 +249,6 @@ export default function ReportsPage() {
                     </tbody>
                   </table>
             )}
-
-            {/* Suppliers */}
             {activeTab === 'suppliers' && (
               supRows.length === 0
                 ? <div className="empty-state"><div className="empty-icon">🏢</div><div className="empty-text">لا توجد بيانات</div></div>
