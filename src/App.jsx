@@ -12,6 +12,7 @@ import LogPage from './pages/LogPage'
 import SupervisorDashboard from './pages/SupervisorDashboard'
 import PdfReportPage from './pages/PdfReportPage'
 import QuickEntryPage from './pages/QuickEntryPage'
+import ManagerReportPage from './pages/ManagerReportPage'
 
 function LoadingScreen() {
   return (
@@ -37,40 +38,39 @@ export default function App() {
   function renderPage() {
     if (role === 'admin') {
       switch (activePage) {
-        case 'dashboard':  return <AdminDashboard setActivePage={setActivePage} />
-        case 'quickentry': return <QuickEntryPage />
-        case 'log':        return <LogPage />
-        case 'reports':    return <ReportsPage />
-        case 'pdf':        return <PdfReportPage />
-        case 'equipment':  return <EquipmentPage />
-        case 'sites':      return <SitesPage />
-        case 'suppliers':  return <SuppliersPage />
-        case 'users':      return <UsersPage />
-        default:           return <AdminDashboard setActivePage={setActivePage} />
+        case 'dashboard':      return <AdminDashboard setActivePage={setActivePage} />
+        case 'quickentry':     return <QuickEntryPage />
+        case 'log':            return <LogPage />
+        case 'reports':        return <ReportsPage />
+        case 'pdf':            return <PdfReportPage />
+        case 'managerreport':  return <ManagerReportPage />
+        case 'equipment':      return <EquipmentPage />
+        case 'sites':          return <SitesPage />
+        case 'suppliers':      return <SuppliersPage />
+        case 'users':          return <UsersPage />
+        default:               return <AdminDashboard setActivePage={setActivePage} />
       }
     }
     if (role === 'supervisor') {
       switch (activePage) {
-        case 'dashboard':  return <SupervisorDashboard setActivePage={setActivePage} />
-        case 'quickentry': return <QuickEntryPage />
-        case 'log':        return <LogPage />
-        case 'history':    return <ReportsPage />
-        case 'pdf':        return <PdfReportPage />
-        default:           return <SupervisorDashboard setActivePage={setActivePage} />
+        case 'dashboard':      return <SupervisorDashboard setActivePage={setActivePage} />
+        case 'quickentry':     return <QuickEntryPage />
+        case 'log':            return <LogPage />
+        case 'history':        return <ReportsPage />
+        case 'pdf':            return <PdfReportPage />
+        default:               return <SupervisorDashboard setActivePage={setActivePage} />
       }
     }
     switch (activePage) {
-      case 'pdf': return <PdfReportPage />
-      default:    return <ReportsPage />
+      case 'pdf':   return <PdfReportPage />
+      default:      return <ReportsPage />
     }
   }
 
   return (
     <div className="app-layout">
       <Sidebar activePage={activePage} setActivePage={setActivePage} />
-      <main className="main-content">
-        {renderPage()}
-      </main>
+      <main className="main-content">{renderPage()}</main>
     </div>
   )
 }

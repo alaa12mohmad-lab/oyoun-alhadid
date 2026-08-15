@@ -2,17 +2,20 @@ import { useAuth } from '../../hooks/useAuth'
 
 const adminNav = [
   { section: 'الرئيسية', items: [
-    { id: 'dashboard',  label: 'لوحة التحكم',        icon: '📊' },
-    { id: 'quickentry', label: 'إدخال سريع أسبوعي',  icon: '⚡' },
-    { id: 'log',        label: 'تسجيل يومي',          icon: '⏱️' },
-    { id: 'reports',    label: 'التقارير الأسبوعية',  icon: '📋' },
-    { id: 'pdf',        label: 'تقرير PDF مخصص',      icon: '📄' },
+    { id: 'dashboard',     label: 'لوحة التحكم',        icon: '📊' },
+    { id: 'quickentry',    label: 'إدخال سريع أسبوعي',  icon: '⚡' },
+    { id: 'log',           label: 'تسجيل يومي',          icon: '⏱️' },
+  ]},
+  { section: 'التقارير', items: [
+    { id: 'reports',       label: 'التقارير الأسبوعية',  icon: '📋' },
+    { id: 'managerreport', label: 'تقرير المدير',         icon: '📨' },
+    { id: 'pdf',           label: 'تقرير PDF مخصص',      icon: '📄' },
   ]},
   { section: 'الإدارة', items: [
-    { id: 'equipment',  label: 'المعدات',              icon: '🏗️' },
-    { id: 'sites',      label: 'المواقع',              icon: '📍' },
-    { id: 'suppliers',  label: 'الموردون',             icon: '🏢' },
-    { id: 'users',      label: 'المستخدمون',           icon: '👥' },
+    { id: 'equipment',     label: 'المعدات',              icon: '🏗️' },
+    { id: 'sites',         label: 'المواقع',              icon: '📍' },
+    { id: 'suppliers',     label: 'الموردون',             icon: '🏢' },
+    { id: 'users',         label: 'المستخدمون',           icon: '👥' },
   ]},
 ]
 
@@ -65,11 +68,9 @@ export default function Sidebar({ activePage, setActivePage }) {
           <div key={section.section}>
             <div className="nav-section-label">{section.section}</div>
             {section.items.map(item => (
-              <button
-                key={item.id}
+              <button key={item.id}
                 className={`nav-item ${activePage === item.id ? 'active' : ''}`}
-                onClick={() => setActivePage(item.id)}
-              >
+                onClick={() => setActivePage(item.id)}>
                 <span className="nav-icon">{item.icon}</span>
                 {item.label}
               </button>
