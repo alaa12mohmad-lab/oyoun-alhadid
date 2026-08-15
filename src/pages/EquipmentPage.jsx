@@ -10,24 +10,27 @@ const today = format(new Date(), 'yyyy-MM-dd')
 const EMPTY = { name: '', siteId: '', supplierId: '', hourlyRate: '', type: '', startDate: '', notes: '' }
 
 export default function EquipmentPage() {
-  const [items, setItems]         = useState([])
-  const [sites, setSites]         = useState([])
-  const [suppliers, setSuppliers] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [modal, setModal]         = useState(false)
-  const [form, setForm]           = useState(EMPTY)
-  const [editId, setEditId]       = useState(null)
-  const [saving, setSaving]       = useState(false)
-  const [search, setSearch]       = useState('')
+  const [items, setItems]           = useState([])
+  const [sites, setSites]           = useState([])
+  const [suppliers, setSuppliers]   = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [modal, setModal]           = useState(false)
+  const [form, setForm]             = useState(EMPTY)
+  const [editId, setEditId]         = useState(null)
+  const [saving, setSaving]         = useState(false)
+  const [search, setSearch]         = useState('')
   const [filterSite, setFilterSite] = useState('')
   const [showRetired, setShowRetired] = useState(false)
   const [retireModal, setRetireModal] = useState(null)
+  const [initLoading, setInitLoading] = useState(false)
+  const [initMsg, setInitMsg]       = useState('')
 
   // Price history modal
-  const [priceModal, setPriceModal] = useState(null)   // equipment item
-  const [priceHistory, setPriceHistory] = useState([]) // loaded entries
-  const [priceForm, setPriceForm] = useState({ price: '', fromDate: today })
-  const [priceSaving, setPriceSaving] = useState(false)
+  const [priceModal, setPriceModal]     = useState(null)
+  const [priceHistory, setPriceHistory] = useState([])
+  const [priceForm, setPriceForm]       = useState({ price: '', fromDate: today })
+  const [priceSaving, setPriceSaving]   = useState(false)
+  const [priceErr, setPriceErr]         = useState('')
 
   useEffect(() => { loadAll() }, [])
 
@@ -44,18 +47,58 @@ export default function EquipmentPage() {
     supList.forEach(s => supMap[s.id]   = s.name)
     setItems(eqSnap.docs.map(d => ({
       id: d.id, ...d.data(),
-      siteName:     siteMap[d.data().siteId]     || '—',
-      supplierName: supMap[d.data().supplierId]   || '—',
+      siteName:     siteMap[d.data().siteId]   || '—',
+      supplierName: supMap[d.data().supplierId] || '—',
     })))
     setSites(siteList)
     setSuppliers(supList)
     setLoading(false)
   }
 
-  // ── Price history ──────────────────────────────────────────────
+  // ── Bulk initialize price history for all equipment ──────────
+  async function initAllPrices() {
+    if (!confirm('سيتم إنشاء سجل أسعار لكل المعدات بأقدم تاريخ لها في السجلات. هل تريد المتابعة؟')) return
+    setInitLoading(true)
+    setInitMsg('')
+    let count = 0
+    try {
+      // Get earliest log date per equipment
+      const allLogsSnap = await getDocs(query(collection(db, 'logs'), orderBy('date', 'asc')))
+      const earliestDate = {}
+      allLogsSnap.docs.forEach(d => {
+        const log = d.data()
+        if (!earliestDate[log.equipmentId] || log.date < earliestDate[log.equipmentId]) {
+          earliestDate[log.equipmentId] = log.date
+        }
+      })
+
+      for (const eq of items) {
+        if (eq.status === 'retired') continue
+        const snap = await getDocs(collection(db, 'equipment', eq.id, 'priceHistory'))
+        if (snap.empty && eq.hourlyRate) {
+          const fromDate = earliestDate[eq.id] || eq.startDate || today
+          await addDoc(collection(db, 'equipment', eq.id, 'priceHistory'), {
+            price: parseFloat(eq.hourlyRate),
+            fromDate,
+            toDate: null,
+            createdAt: serverTimestamp(),
+          })
+          count++
+        }
+      }
+      setInitMsg(`✅ تم تهيئة ${count} معدة — الأسعار ستُحسب من أقدم سجل لكل معدة`)
+    } catch (e) {
+      setInitMsg('❌ خطأ: ' + e.message)
+    } finally {
+      setInitLoading(false)
+    }
+  }
+
+  // ── Price history ─────────────────────────────────────────────
   async function openPriceModal(item) {
     setPriceModal(item)
     setPriceForm({ price: '', fromDate: today })
+    setPriceErr('')
     const snap = await getDocs(
       query(collection(db, 'equipment', item.id, 'priceHistory'), orderBy('fromDate', 'desc'))
     )
@@ -63,51 +106,54 @@ export default function EquipmentPage() {
   }
 
   async function addPriceEntry() {
-    if (!priceForm.price || !priceForm.fromDate) return alert('يرجى إدخال السعر والتاريخ')
+    if (!priceForm.price || !priceForm.fromDate) return setPriceErr('يرجى إدخال السعر والتاريخ')
     setPriceSaving(true)
+    setPriceErr('')
+    try {
+      const newPrice = parseFloat(priceForm.price)
+      const fromDate = priceForm.fromDate
+      const batch    = writeBatch(db)
 
-    const newPrice  = parseFloat(priceForm.price)
-    const fromDate  = priceForm.fromDate
+      // Close previous open entry
+      const openEntry = priceHistory.find(e => !e.toDate)
+      if (openEntry) {
+        if (fromDate <= openEntry.fromDate) {
+          setPriceErr('تاريخ البداية يجب أن يكون بعد ' + openEntry.fromDate)
+          setPriceSaving(false)
+          return
+        }
+        const prevTo = new Date(fromDate)
+        prevTo.setDate(prevTo.getDate() - 1)
+        batch.update(doc(db, 'equipment', priceModal.id, 'priceHistory', openEntry.id), {
+          toDate: format(prevTo, 'yyyy-MM-dd')
+        })
+      }
 
-    // Close previous entry's toDate
-    const batch = writeBatch(db)
-
-    // Find any entry with no toDate or toDate >= fromDate
-    const prevEntry = priceHistory.find(e => !e.toDate || e.toDate >= fromDate)
-    if (prevEntry) {
-      // Set its toDate to day before fromDate
-      const prevTo = new Date(fromDate)
-      prevTo.setDate(prevTo.getDate() - 1)
-      batch.update(doc(db, 'equipment', priceModal.id, 'priceHistory', prevEntry.id), {
-        toDate: format(prevTo, 'yyyy-MM-dd')
+      // Add new entry
+      const newRef = doc(collection(db, 'equipment', priceModal.id, 'priceHistory'))
+      batch.set(newRef, {
+        price: newPrice, fromDate, toDate: null, createdAt: serverTimestamp(),
       })
+
+      // Update equipment.hourlyRate
+      batch.update(doc(db, 'equipment', priceModal.id), {
+        hourlyRate: newPrice, updatedAt: serverTimestamp(),
+      })
+
+      await batch.commit()
+      setPriceForm({ price: '', fromDate: today })
+
+      // Reload
+      const snap = await getDocs(
+        query(collection(db, 'equipment', priceModal.id, 'priceHistory'), orderBy('fromDate', 'desc'))
+      )
+      setPriceHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      loadAll()
+    } catch (e) {
+      setPriceErr('خطأ: ' + e.message)
+    } finally {
+      setPriceSaving(false)
     }
-
-    // Add new entry
-    const newRef = doc(collection(db, 'equipment', priceModal.id, 'priceHistory'))
-    batch.set(newRef, {
-      price: newPrice,
-      fromDate,
-      toDate: null,
-      createdAt: serverTimestamp(),
-    })
-
-    // Update equipment.hourlyRate to latest price
-    batch.update(doc(db, 'equipment', priceModal.id), {
-      hourlyRate: newPrice,
-      updatedAt: serverTimestamp(),
-    })
-
-    await batch.commit()
-    setPriceSaving(false)
-    setPriceForm({ price: '', fromDate: today })
-
-    // Reload price history
-    const snap = await getDocs(
-      query(collection(db, 'equipment', priceModal.id, 'priceHistory'), orderBy('fromDate', 'desc'))
-    )
-    setPriceHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    loadAll()
   }
 
   async function deletePriceEntry(entryId) {
@@ -119,7 +165,7 @@ export default function EquipmentPage() {
     setPriceHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
   }
 
-  // ── Equipment CRUD ─────────────────────────────────────────────
+  // ── Equipment CRUD ────────────────────────────────────────────
   function openAdd() { setForm(EMPTY); setEditId(null); setModal(true) }
   function openEdit(item) {
     setForm({
@@ -146,13 +192,11 @@ export default function EquipmentPage() {
       const newRef = await addDoc(collection(db, 'equipment'), {
         ...data, status: 'active', createdAt: serverTimestamp(),
       })
-      // Auto-create first price history entry
       if (form.hourlyRate) {
         await addDoc(collection(db, 'equipment', newRef.id, 'priceHistory'), {
           price: parseFloat(form.hourlyRate),
           fromDate: form.startDate || today,
-          toDate: null,
-          createdAt: serverTimestamp(),
+          toDate: null, createdAt: serverTimestamp(),
         })
       }
     }
@@ -179,7 +223,6 @@ export default function EquipmentPage() {
 
   const activeItems  = items.filter(i => i.status !== 'retired')
   const retiredItems = items.filter(i => i.status === 'retired')
-
   const filtered = (showRetired ? retiredItems : activeItems).filter(i => {
     const q = search.toLowerCase()
     return (!q || i.name.toLowerCase().includes(q) || i.supplierName.toLowerCase().includes(q))
@@ -195,8 +238,20 @@ export default function EquipmentPage() {
           <div className="page-title">🏗️ المعدات</div>
           <div className="page-sub">{activeItems.length} نشطة{retiredItems.length > 0 ? ` · ${retiredItems.length} متوقفة` : ''}</div>
         </div>
-        <button className="btn btn-primary" onClick={openAdd}>+ إضافة معدة</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={initAllPrices} disabled={initLoading}
+            title="تهيئة سجل أسعار للمعدات التي ليس لها سجل">
+            {initLoading ? 'جاري التهيئة...' : '💲 تهيئة الأسعار'}
+          </button>
+          <button className="btn btn-primary" onClick={openAdd}>+ إضافة معدة</button>
+        </div>
       </div>
+
+      {initMsg && (
+        <div className={`alert ${initMsg.startsWith('✅') ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: 16 }}>
+          {initMsg}
+        </div>
+      )}
 
       <div className="card">
         <div className="card-header" style={{ gap: 12, flexWrap: 'wrap' }}>
@@ -262,7 +317,7 @@ export default function EquipmentPage() {
         </div>
       </div>
 
-      {/* ── Add/Edit Modal ── */}
+      {/* Add/Edit Modal */}
       {modal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModal(false)}>
           <div className="modal">
@@ -306,7 +361,7 @@ export default function EquipmentPage() {
                 <div className="form-group">
                   <label className="form-label">سعر الساعة (ريال) *</label>
                   <input type="number" className="form-control" value={form.hourlyRate} onChange={e => setForm(f => ({ ...f, hourlyRate: e.target.value }))} placeholder="250" />
-                  {editId && <div className="info-text">💡 لتغيير السعر باستخدام تواريخ سريان، استخدم زر 💲</div>}
+                  {editId && <div className="info-text">💡 لتغيير السعر بتواريخ سريان استخدم زر 💲</div>}
                 </div>
               </div>
               <div className="form-group">
@@ -322,7 +377,7 @@ export default function EquipmentPage() {
         </div>
       )}
 
-      {/* ── Price History Modal ── */}
+      {/* Price History Modal */}
       {priceModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setPriceModal(null)}>
           <div className="modal" style={{ maxWidth: 560 }}>
@@ -331,9 +386,9 @@ export default function EquipmentPage() {
               <button className="btn btn-icon btn-secondary" onClick={() => setPriceModal(null)}>✕</button>
             </div>
             <div className="modal-body">
-              {/* Add new price */}
               <div style={{ background: 'var(--accent-dim2)', border: '1px solid rgba(232,160,32,0.2)', borderRadius: 8, padding: 16, marginBottom: 20 }}>
                 <div style={{ fontWeight: 600, fontSize: '0.88rem', marginBottom: 12 }}>➕ إضافة سعر جديد</div>
+                {priceErr && <div className="alert alert-error" style={{ marginBottom: 10 }}>⚠️ {priceErr}</div>}
                 <div className="form-row">
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">السعر الجديد (ريال/ساعة) *</label>
@@ -347,7 +402,7 @@ export default function EquipmentPage() {
                   </div>
                 </div>
                 <div className="info-text" style={{ marginTop: 8 }}>
-                  ⚠️ السجلات قبل هذا التاريخ ستحتسب بالسعر القديم، وبعده بالسعر الجديد
+                  ⚠️ السجلات قبل هذا التاريخ بالسعر القديم، وبعده بالسعر الجديد
                 </div>
                 <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }}
                   onClick={addPriceEntry} disabled={priceSaving}>
@@ -355,14 +410,13 @@ export default function EquipmentPage() {
                 </button>
               </div>
 
-              {/* Price history table */}
               <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 10, color: 'var(--text-2)' }}>
                 📋 سجل الأسعار ({priceHistory.length} إدخال)
               </div>
               {priceHistory.length === 0 ? (
                 <div className="empty-state" style={{ padding: '20px 0' }}>
                   <div className="empty-icon" style={{ fontSize: '1.5rem' }}>💲</div>
-                  <div className="empty-text">لا يوجد سجل أسعار — أضف أول سعر</div>
+                  <div className="empty-text">لا يوجد سجل — اضغط "تهيئة الأسعار" أو أضف أول سعر</div>
                 </div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
@@ -371,7 +425,7 @@ export default function EquipmentPage() {
                       <th style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-3)', fontWeight: 500 }}>السعر</th>
                       <th style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-3)', fontWeight: 500 }}>من</th>
                       <th style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-3)', fontWeight: 500 }}>إلى</th>
-                      <th style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-3)', fontWeight: 500 }}></th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -383,7 +437,7 @@ export default function EquipmentPage() {
                         </td>
                         <td style={{ padding: '10px 12px' }}>{entry.fromDate}</td>
                         <td style={{ padding: '10px 12px', color: entry.toDate ? 'var(--text-2)' : 'var(--success)' }}>
-                          {entry.toDate || 'مستمر'}
+                          {entry.toDate || 'مستمر ✓'}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
                           {i !== 0 && (
@@ -403,7 +457,7 @@ export default function EquipmentPage() {
         </div>
       )}
 
-      {/* ── Retire Modal ── */}
+      {/* Retire Modal */}
       {retireModal && (
         <RetireModal item={retireModal} onConfirm={(date) => retireEquipment(retireModal, date)} onClose={() => setRetireModal(null)} />
       )}
