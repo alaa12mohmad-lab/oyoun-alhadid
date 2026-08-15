@@ -68,12 +68,13 @@ export default function ReportsPage() {
       }))
 
       // 4. Helper: get effective rate for a log
-      function getRate(log) {
-        const history  = histories[log.equipmentId] || []
-        const fallback = eqMap[log.equipmentId]?.hourlyRate || log.hourlyRate || 0
-        const rate     = getPriceForDate(history, log.date, fallback)
-        return rate
-      }
+     function getRate(log) {
+  const history  = histories[log.equipmentId] || []
+  const fallback = eqMap[log.equipmentId]?.hourlyRate || log.hourlyRate || 0
+  const rate     = getPriceForDate(history, log.date, fallback)
+  console.log('getRate:', log.equipmentName, log.date, 'history:', history.length, 'rate:', rate, 'fallback:', fallback)
+  return rate
+}
 
       // 5. Build equipment summary
       const eqSummary = {}
