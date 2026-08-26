@@ -84,6 +84,8 @@ export default function ManagerReportPage() {
             workDays: 0, breakdownDays: 0, maintenanceDays: 0,
             breakdownReasons: [],
             expectedDays: eq ? getExpectedDays(eq, from, to) : 0,
+            isRetired: eq?.status === 'retired',
+            retiredDate: eq?.retiredDate || null,
           }
         }
         const s = eqSummary[l.equipmentId]
@@ -205,7 +207,10 @@ export default function ManagerReportPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button className="btn btn-secondary btn-sm" onClick={() => setOffset(o => o - 1)}>→ السابق</button>
-            <div style={{ background: 'var(--steel-3)', border: '1px solid var(--accent)', borderRadius: 8, padding: '7px 18px', fontWeight: 600, fontSize: '0.9rem', color: 'var(--accent)' }}>{label}</div>
+            <div style={{ background: 'var(--steel-3)', border: '1px solid var(--accent)', borderRadius: 8, padding: '7px 18px', fontWeight: 600, fontSize: '0.9rem', color: 'var(--accent)', textAlign: 'center' }}>
+              <div>{label}</div>
+              {data && mode === 'weekly' && <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 400, marginTop: 2 }}>{data.from} — {data.to}</div>}
+            </div>
             <button className="btn btn-secondary btn-sm" onClick={() => setOffset(o => Math.min(o + 1, 0))} disabled={offset === 0}>التالي ←</button>
             <button className="btn btn-secondary btn-sm" onClick={() => setOffset(0)} disabled={offset === 0}>الحالي</button>
           </div>
@@ -253,12 +258,17 @@ export default function ManagerReportPage() {
               <div style={{ fontWeight: 700, marginBottom: 10, color: 'var(--text-2)', fontSize: '0.85rem' }}>🏗️ المعدات</div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>المعدة</th><th>الموقع</th><th>الساعات</th><th>التكلفة</th><th>نسبة التشغيل</th><th>عطل</th></tr></thead>
+                  <thead><tr><th>المعدة</th><th>الموقع</th><th>الحالة</th><th>الساعات</th><th>التكلفة</th><th>نسبة التشغيل</th><th>عطل</th></tr></thead>
                   <tbody>
                     {data.eqList.map((e, i) => (
                       <tr key={i}>
                         <td style={{ fontWeight: 600 }}>{e.name}</td>
                         <td><span className="badge badge-blue">{e.siteName}</span></td>
+                        <td>
+                          {e.isRetired
+                            ? <span className="badge badge-red">⏹️ متوقفة {e.retiredDate || ''}</span>
+                            : <span className="badge badge-green">✅ تعمل</span>}
+                        </td>
                         <td>{e.hours.toFixed(0)} س</td>
                         <td style={{ color: 'var(--accent)', fontWeight: 700 }}>{e.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
                         <td>
@@ -286,7 +296,12 @@ export default function ManagerReportPage() {
             <div style={{ fontSize: 32, marginBottom: 8 }}>⚙️</div>
             <div className="cover-title">عيون الحديد — تقرير المعدات</div>
             <div className="cover-sub">{mode === 'weekly' ? 'تقرير أسبوعي' : 'تقرير شهري'}</div>
-            <div className="cover-period">{data.label} · {data.from} — {data.to}</div>
+            <div className="cover-period">{data.label}</div>
+            <div style={{ fontSize: 13, color: '#555', marginTop: 6, fontWeight: 600 }}>
+              {mode === 'weekly'
+                ? `من ${data.from} إلى ${data.to}`
+                : data.from.substring(0, 7).replace('-', '/')}
+            </div>
             <div style={{ fontSize: 11, color: '#999', marginTop: 8 }}>تاريخ الإصدار: {format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
           </div>
 
@@ -318,13 +333,16 @@ export default function ManagerReportPage() {
 
           <div className="section-title">🏗️ تفاصيل المعدات</div>
           <table className="r-table">
-            <thead><tr><th>المعدة</th><th>الموقع</th><th>المورد</th><th>الساعات</th><th>التكلفة (ريال)</th><th>نسبة التشغيل</th><th>عطل</th><th>صيانة</th></tr></thead>
+            <thead><tr><th>المعدة</th><th>الموقع</th><th>المورد</th><th>الحالة</th><th>الساعات</th><th>التكلفة (ريال)</th><th>نسبة التشغيل</th><th>عطل</th><th>صيانة</th></tr></thead>
             <tbody>
               {data.eqList.map((e, i) => (
                 <tr key={i}>
                   <td style={{ fontWeight: 700 }}>{e.name}</td>
                   <td>{e.siteName}</td>
                   <td>{e.supplierName}</td>
+                  <td style={{ color: e.isRetired ? '#e05050' : '#3eb87a', fontWeight: 600 }}>
+                    {e.isRetired ? `⏹️ متوقفة ${e.retiredDate || ''}` : '✅ تعمل'}
+                  </td>
                   <td>{e.hours.toFixed(0)}</td>
                   <td style={{ fontWeight: 700, color: '#e8a020' }}>{e.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td>
                   <td>
