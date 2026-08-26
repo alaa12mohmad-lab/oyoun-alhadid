@@ -92,6 +92,23 @@ export default function PdfReportPage() {
         cost: (log.hours || 0) * getRate(log),
       }))
 
+      // Find last working day per retired equipment
+      const lastWorkingDay = {}
+      processed.forEach(log => {
+        const eq = eqMap[log.equipmentId]
+        if (eq?.status === 'retired' && log.status === 'working') {
+          if (!lastWorkingDay[log.equipmentId] || log.date > lastWorkingDay[log.equipmentId]) {
+            lastWorkingDay[log.equipmentId] = log.date
+          }
+        }
+      })
+
+      // Mark last working day on logs
+      const processedWithMark = processed.map(log => ({
+        ...log,
+        isLastWorkingDay: lastWorkingDay[log.equipmentId] === log.date && log.status === 'working',
+      }))
+
       const tHours   = processed.reduce((s, l) => s + (l.hours || 0), 0)
       const tCost    = processed.reduce((s, l) => s + l.cost, 0)
       const wDays    = processed.filter(l => l.status === 'working').length
@@ -105,8 +122,8 @@ export default function PdfReportPage() {
         byEq[l.equipmentId].records++
       })
 
-      setLogs(processed)
-      setProcessedLogs(processed)
+      setLogs(processedWithMark)
+      setProcessedLogs(processedWithMark)
       setTotalHours(tHours)
       setTotalCost(tCost)
       setWorkingDays(wDays)
@@ -245,9 +262,14 @@ export default function PdfReportPage() {
                   </thead>
                   <tbody>
                     {logs.map((log, i) => (
-                      <tr key={log.id}>
+                      <tr key={log.id} style={{ background: log.isLastWorkingDay ? 'rgba(224,80,80,0.08)' : 'transparent' }}>
                         <td style={{ color: 'var(--text-3)' }}>{i + 1}</td>
-                        <td>{log.date}</td>
+                        <td>
+                          {log.date}
+                          {log.isLastWorkingDay && (
+                            <div style={{ fontSize: '0.68rem', color: 'var(--danger)', fontWeight: 700, marginTop: 2 }}>🔴 آخر يوم عمل</div>
+                          )}
+                        </td>
                         <td style={{ fontWeight: 500 }}>{log.equipmentName}</td>
                         <td>{log.siteName || '—'}</td>
                         <td>{log.supplierName || '—'}</td>
@@ -309,8 +331,13 @@ export default function PdfReportPage() {
             <thead><tr><th>#</th><th>التاريخ</th><th>المعدة</th><th>الموقع</th><th>المورد</th><th>الحالة</th><th>الساعات</th><th>سعر/س</th><th>التكلفة</th><th>ملاحظات</th></tr></thead>
             <tbody>
               {logs.map((log, i) => (
-                <tr key={log.id}>
-                  <td>{i + 1}</td><td>{log.date}</td><td>{log.equipmentName}</td>
+                <tr key={log.id} style={{ background: log.isLastWorkingDay ? '#fff0f0' : 'transparent' }}>
+                  <td>{i + 1}</td>
+                  <td>
+                    {log.date}
+                    {log.isLastWorkingDay && <div style={{ color: '#e05050', fontWeight: 700, fontSize: 9 }}>🔴 آخر يوم عمل</div>}
+                  </td>
+                  <td>{log.equipmentName}</td>
                   <td>{log.siteName || '—'}</td><td>{log.supplierName || '—'}</td>
                   <td>{STATUS_LABELS[log.status] || '—'}{log.stopReason ? ` (${log.stopReason})` : ''}</td>
                   <td>{log.hours > 0 ? log.hours : '—'}</td>
