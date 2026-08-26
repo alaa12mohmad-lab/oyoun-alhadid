@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '../firebase'
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths } from 'date-fns'
@@ -18,14 +18,11 @@ export default function PdfReportPage() {
   const [logs, setLogs]           = useState([])
   const [loading, setLoading]     = useState(false)
   const [generated, setGenerated] = useState(false)
-
-  // Summary state
-  const [totalHours, setTotalHours]       = useState(0)
-  const [totalCost, setTotalCost]         = useState(0)
-  const [workingDays, setWorkingDays]     = useState(0)
-  const [stoppedDays, setStoppedDays]     = useState(0)
-  const [byEquipment, setByEquipment]     = useState({})
-  const [processedLogs, setProcessedLogs] = useState([])
+  const [totalHours, setTotalHours]   = useState(0)
+  const [totalCost, setTotalCost]     = useState(0)
+  const [workingDays, setWorkingDays] = useState(0)
+  const [stoppedDays, setStoppedDays] = useState(0)
+  const [byEquipment, setByEquipment] = useState({})
 
   useEffect(() => { loadMeta() }, [])
 
@@ -57,13 +54,12 @@ export default function PdfReportPage() {
   async function generate() {
     setLoading(true); setGenerated(false)
     try {
-      let q = query(
+      const snap = await getDocs(query(
         collection(db, 'logs'),
         where('date', '>=', filters.dateFrom),
         where('date', '<=', filters.dateTo),
         orderBy('date', 'asc')
-      )
-      const snap = await getDocs(q)
+      ))
       let result = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
       if (filters.siteId)      result = result.filter(l => l.siteId === filters.siteId)
@@ -71,7 +67,6 @@ export default function PdfReportPage() {
       if (filters.equipmentId) result = result.filter(l => l.equipmentId === filters.equipmentId)
       if (filters.status)      result = result.filter(l => l.status === filters.status)
 
-      // Load priceHistory for used equipment
       const usedEqIds = [...new Set(result.map(l => l.equipmentId))]
       const eqMap = {}; equipment.forEach(e => eqMap[e.id] = e)
       const histories = {}
@@ -92,9 +87,18 @@ export default function PdfReportPage() {
         cost: (log.hours || 0) * getRate(log),
       }))
 
-      // Find last working day per retired equipment
+      // ✅ Filter out logs after retiredDate for retired equipment
+      const filteredProcessed = processed.filter(log => {
+        const eq = eqMap[log.equipmentId]
+        if (eq?.status === 'retired' && eq?.retiredDate) {
+          return log.date <= eq.retiredDate
+        }
+        return true
+      })
+
+      // ✅ Find last working day per retired equipment
       const lastWorkingDay = {}
-      processed.forEach(log => {
+      filteredProcessed.forEach(log => {
         const eq = eqMap[log.equipmentId]
         if (eq?.status === 'retired' && log.status === 'working') {
           if (!lastWorkingDay[log.equipmentId] || log.date > lastWorkingDay[log.equipmentId]) {
@@ -103,19 +107,19 @@ export default function PdfReportPage() {
         }
       })
 
-      // Mark last working day on logs
-      const processedWithMark = processed.map(log => ({
+      // ✅ Mark last working day
+      const processedWithMark = filteredProcessed.map(log => ({
         ...log,
         isLastWorkingDay: lastWorkingDay[log.equipmentId] === log.date && log.status === 'working',
       }))
 
-      const tHours   = processed.reduce((s, l) => s + (l.hours || 0), 0)
-      const tCost    = processed.reduce((s, l) => s + l.cost, 0)
-      const wDays    = processed.filter(l => l.status === 'working').length
-      const sDays    = processed.filter(l => l.status !== 'working').length
+      const tHours = filteredProcessed.reduce((s, l) => s + (l.hours || 0), 0)
+      const tCost  = filteredProcessed.reduce((s, l) => s + l.cost, 0)
+      const wDays  = filteredProcessed.filter(l => l.status === 'working').length
+      const sDays  = filteredProcessed.filter(l => l.status !== 'working').length
 
       const byEq = {}
-      processed.forEach(l => {
+      filteredProcessed.forEach(l => {
         if (!byEq[l.equipmentId]) byEq[l.equipmentId] = { name: l.equipmentName || '—', hours: 0, cost: 0, records: 0 }
         byEq[l.equipmentId].hours   += l.hours || 0
         byEq[l.equipmentId].cost    += l.cost
@@ -123,7 +127,6 @@ export default function PdfReportPage() {
       })
 
       setLogs(processedWithMark)
-      setProcessedLogs(processedWithMark)
       setTotalHours(tHours)
       setTotalCost(tCost)
       setWorkingDays(wDays)
@@ -136,7 +139,7 @@ export default function PdfReportPage() {
 
   function printPdf() { window.print() }
 
-  const siteName     = sites.find(s => s.id === filters.siteId)?.name     || 'كل المواقع'
+  const siteName     = sites.find(s => s.id === filters.siteId)?.name        || 'كل المواقع'
   const supplierName = suppliers.find(s => s.id === filters.supplierId)?.name || 'كل الموردين'
   const eqName       = equipment.find(e => e.id === filters.equipmentId)?.name || 'كل المعدات'
 
@@ -338,7 +341,8 @@ export default function PdfReportPage() {
                     {log.isLastWorkingDay && <div style={{ color: '#e05050', fontWeight: 700, fontSize: 9 }}>🔴 آخر يوم عمل</div>}
                   </td>
                   <td>{log.equipmentName}</td>
-                  <td>{log.siteName || '—'}</td><td>{log.supplierName || '—'}</td>
+                  <td>{log.siteName || '—'}</td>
+                  <td>{log.supplierName || '—'}</td>
                   <td>{STATUS_LABELS[log.status] || '—'}{log.stopReason ? ` (${log.stopReason})` : ''}</td>
                   <td>{log.hours > 0 ? log.hours : '—'}</td>
                   <td>{log.effectiveRate > 0 ? log.effectiveRate : '—'}</td>
@@ -348,7 +352,8 @@ export default function PdfReportPage() {
               ))}
               <tr style={{ fontWeight: 'bold', background: '#f0f0f0' }}>
                 <td colSpan={6}>الإجمالي</td>
-                <td>{totalHours.toFixed(1)}</td><td></td>
+                <td>{totalHours.toFixed(1)}</td>
+                <td></td>
                 <td style={{ color: '#e8a020' }}>{totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td>
                 <td></td>
               </tr>
