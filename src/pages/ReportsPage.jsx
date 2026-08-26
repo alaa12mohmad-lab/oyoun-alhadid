@@ -79,7 +79,7 @@ export default function ReportsPage() {
       // 5. Build equipment summary
       const eqSummary = {}
       logs.forEach(log => {
-        const eq   = eqMap[log.equipmentId] || {}
+        const eq = eqMap[log.equipmentId] || eqMap[log.equipmentId.trim()] || {}
         const rate = getRate(log)
         const cost = (log.hours || 0) * rate
         if (!eqSummary[log.equipmentId]) {
