@@ -22,6 +22,7 @@ export default function EquipmentPage() {
   const [filterSite, setFilterSite] = useState('')
   const [showRetired, setShowRetired] = useState(false)
   const [retireModal, setRetireModal] = useState(null)
+  const [editRetireModal, setEditRetireModal] = useState(null) // edit retiredDate
   const [initLoading, setInitLoading] = useState(false)
   const [initMsg, setInitMsg]       = useState('')
 
@@ -55,14 +56,12 @@ export default function EquipmentPage() {
     setLoading(false)
   }
 
-  // ── Bulk initialize price history for all equipment ──────────
+  // ── Bulk init prices ──────────────────────────────────────────
   async function initAllPrices() {
-    if (!confirm('سيتم إنشاء سجل أسعار لكل المعدات بأقدم تاريخ لها في السجلات. هل تريد المتابعة؟')) return
-    setInitLoading(true)
-    setInitMsg('')
+    if (!confirm('سيتم إنشاء سجل أسعار لكل المعدات التي ليس لها سجل. هل تريد المتابعة؟')) return
+    setInitLoading(true); setInitMsg('')
     let count = 0
     try {
-      // Get earliest log date per equipment
       const allLogsSnap = await getDocs(query(collection(db, 'logs'), orderBy('date', 'asc')))
       const earliestDate = {}
       allLogsSnap.docs.forEach(d => {
@@ -71,56 +70,41 @@ export default function EquipmentPage() {
           earliestDate[log.equipmentId] = log.date
         }
       })
-
       for (const eq of items) {
         if (eq.status === 'retired') continue
         const snap = await getDocs(collection(db, 'equipment', eq.id, 'priceHistory'))
         if (snap.empty && eq.hourlyRate) {
           const fromDate = earliestDate[eq.id] || eq.startDate || today
           await addDoc(collection(db, 'equipment', eq.id, 'priceHistory'), {
-            price: parseFloat(eq.hourlyRate),
-            fromDate,
-            toDate: null,
-            createdAt: serverTimestamp(),
+            price: parseFloat(eq.hourlyRate), fromDate, toDate: null, createdAt: serverTimestamp(),
           })
           count++
         }
       }
-      setInitMsg(`✅ تم تهيئة ${count} معدة — الأسعار ستُحسب من أقدم سجل لكل معدة`)
-    } catch (e) {
-      setInitMsg('❌ خطأ: ' + e.message)
-    } finally {
-      setInitLoading(false)
-    }
+      setInitMsg(`✅ تم تهيئة ${count} معدة`)
+    } catch (e) { setInitMsg('❌ خطأ: ' + e.message) }
+    finally { setInitLoading(false) }
   }
 
   // ── Price history ─────────────────────────────────────────────
   async function openPriceModal(item) {
-    setPriceModal(item)
-    setPriceForm({ price: '', fromDate: today })
-    setPriceErr('')
-    const snap = await getDocs(
-      query(collection(db, 'equipment', item.id, 'priceHistory'), orderBy('fromDate', 'desc'))
-    )
+    setPriceModal(item); setPriceForm({ price: '', fromDate: today }); setPriceErr('')
+    const snap = await getDocs(query(collection(db, 'equipment', item.id, 'priceHistory'), orderBy('fromDate', 'desc')))
     setPriceHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
   }
 
   async function addPriceEntry() {
     if (!priceForm.price || !priceForm.fromDate) return setPriceErr('يرجى إدخال السعر والتاريخ')
-    setPriceSaving(true)
-    setPriceErr('')
+    setPriceSaving(true); setPriceErr('')
     try {
       const newPrice = parseFloat(priceForm.price)
       const fromDate = priceForm.fromDate
       const batch    = writeBatch(db)
-
-      // Close previous open entry
       const openEntry = priceHistory.find(e => !e.toDate)
       if (openEntry) {
         if (fromDate <= openEntry.fromDate) {
           setPriceErr('تاريخ البداية يجب أن يكون بعد ' + openEntry.fromDate)
-          setPriceSaving(false)
-          return
+          setPriceSaving(false); return
         }
         const prevTo = new Date(fromDate)
         prevTo.setDate(prevTo.getDate() - 1)
@@ -128,40 +112,22 @@ export default function EquipmentPage() {
           toDate: format(prevTo, 'yyyy-MM-dd')
         })
       }
-
-      // Add new entry
       const newRef = doc(collection(db, 'equipment', priceModal.id, 'priceHistory'))
-      batch.set(newRef, {
-        price: newPrice, fromDate, toDate: null, createdAt: serverTimestamp(),
-      })
-
-      // Update equipment.hourlyRate
-      batch.update(doc(db, 'equipment', priceModal.id), {
-        hourlyRate: newPrice, updatedAt: serverTimestamp(),
-      })
-
+      batch.set(newRef, { price: newPrice, fromDate, toDate: null, createdAt: serverTimestamp() })
+      batch.update(doc(db, 'equipment', priceModal.id), { hourlyRate: newPrice, updatedAt: serverTimestamp() })
       await batch.commit()
       setPriceForm({ price: '', fromDate: today })
-
-      // Reload
-      const snap = await getDocs(
-        query(collection(db, 'equipment', priceModal.id, 'priceHistory'), orderBy('fromDate', 'desc'))
-      )
+      const snap = await getDocs(query(collection(db, 'equipment', priceModal.id, 'priceHistory'), orderBy('fromDate', 'desc')))
       setPriceHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
       loadAll()
-    } catch (e) {
-      setPriceErr('خطأ: ' + e.message)
-    } finally {
-      setPriceSaving(false)
-    }
+    } catch (e) { setPriceErr('خطأ: ' + e.message) }
+    finally { setPriceSaving(false) }
   }
 
   async function deletePriceEntry(entryId) {
     if (!confirm('حذف هذا السعر؟')) return
     await deleteDoc(doc(db, 'equipment', priceModal.id, 'priceHistory', entryId))
-    const snap = await getDocs(
-      query(collection(db, 'equipment', priceModal.id, 'priceHistory'), orderBy('fromDate', 'desc'))
-    )
+    const snap = await getDocs(query(collection(db, 'equipment', priceModal.id, 'priceHistory'), orderBy('fromDate', 'desc')))
     setPriceHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
   }
 
@@ -189,9 +155,7 @@ export default function EquipmentPage() {
     if (editId) {
       await updateDoc(doc(db, 'equipment', editId), data)
     } else {
-      const newRef = await addDoc(collection(db, 'equipment'), {
-        ...data, status: 'active', createdAt: serverTimestamp(),
-      })
+      const newRef = await addDoc(collection(db, 'equipment'), { ...data, status: 'active', createdAt: serverTimestamp() })
       if (form.hourlyRate) {
         await addDoc(collection(db, 'equipment', newRef.id, 'priceHistory'), {
           price: parseFloat(form.hourlyRate),
@@ -203,16 +167,36 @@ export default function EquipmentPage() {
     setModal(false); setSaving(false); loadAll()
   }
 
+  // ── Retire + Edit retiredDate ─────────────────────────────────
   async function retireEquipment(item, retireDate) {
+    if (!retireDate) return alert('يرجى تحديد تاريخ الإيقاف')
+    // Validate format yyyy-MM-dd
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(retireDate)) return alert('تنسيق التاريخ غير صحيح')
     await updateDoc(doc(db, 'equipment', item.id), {
-      status: 'retired', retiredDate: retireDate, updatedAt: serverTimestamp(),
+      status: 'retired',
+      retiredDate: retireDate,
+      updatedAt: serverTimestamp(),
     })
     setRetireModal(null); loadAll()
   }
 
+  async function updateRetiredDate(item, newDate) {
+    if (!newDate) return alert('يرجى تحديد تاريخ الإيقاف')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return alert('تنسيق التاريخ غير صحيح')
+    await updateDoc(doc(db, 'equipment', item.id), {
+      retiredDate: newDate,
+      updatedAt: serverTimestamp(),
+    })
+    setEditRetireModal(null); loadAll()
+  }
+
   async function reactivate(item) {
-    if (!confirm('إعادة تفعيل هذه المعدة؟')) return
-    await updateDoc(doc(db, 'equipment', item.id), { status: 'active', retiredDate: null, updatedAt: serverTimestamp() })
+    if (!confirm(`إعادة تفعيل ${item.name}؟ سيتم مسح تاريخ الإيقاف.`)) return
+    await updateDoc(doc(db, 'equipment', item.id), {
+      status: 'active',
+      retiredDate: null,
+      updatedAt: serverTimestamp(),
+    })
     loadAll()
   }
 
@@ -239,9 +223,8 @@ export default function EquipmentPage() {
           <div className="page-sub">{activeItems.length} نشطة{retiredItems.length > 0 ? ` · ${retiredItems.length} متوقفة` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={initAllPrices} disabled={initLoading}
-            title="تهيئة سجل أسعار للمعدات التي ليس لها سجل">
-            {initLoading ? 'جاري التهيئة...' : '💲 تهيئة الأسعار'}
+          <button className="btn btn-secondary" onClick={initAllPrices} disabled={initLoading} title="تهيئة سجل أسعار للمعدات التي ليس لها سجل">
+            {initLoading ? 'جاري...' : '💲 تهيئة الأسعار'}
           </button>
           <button className="btn btn-primary" onClick={openAdd}>+ إضافة معدة</button>
         </div>
@@ -292,7 +275,19 @@ export default function EquipmentPage() {
                     <td style={{ color: 'var(--accent)', fontWeight: 600 }}>
                       {Number(item.hourlyRate).toLocaleString('ar-SA')} ر/س
                     </td>
-                    {showRetired && <td style={{ fontSize: '0.82rem', color: 'var(--danger)' }}>{item.retiredDate || '—'}</td>}
+                    {showRetired && (
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: '0.82rem', color: 'var(--danger)', fontWeight: 600 }}>
+                            {item.retiredDate || '—'}
+                          </span>
+                          <button className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                            onClick={() => setEditRetireModal(item)} title="تعديل تاريخ الإيقاف">
+                            ✏️
+                          </button>
+                        </div>
+                      </td>
+                    )}
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {!showRetired ? (
@@ -303,8 +298,8 @@ export default function EquipmentPage() {
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-secondary btn-sm" onClick={() => reactivate(item)}>▶️</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => remove(item.id)}>🗑️</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => reactivate(item)} title="إعادة تفعيل">▶️</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => remove(item.id)} title="حذف نهائي">🗑️</button>
                           </>
                         )}
                       </div>
@@ -354,7 +349,7 @@ export default function EquipmentPage() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">تاريخ بداية العمل *</label>
+                  <label className="form-label">تاريخ بداية العمل</label>
                   <input type="date" className="form-control" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
                   <div className="info-text">⚠️ لن يحتسب أي تكلفة قبل هذا التاريخ</div>
                 </div>
@@ -401,22 +396,18 @@ export default function EquipmentPage() {
                       onChange={e => setPriceForm(f => ({ ...f, fromDate: e.target.value }))} />
                   </div>
                 </div>
-                <div className="info-text" style={{ marginTop: 8 }}>
-                  ⚠️ السجلات قبل هذا التاريخ بالسعر القديم، وبعده بالسعر الجديد
-                </div>
-                <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }}
-                  onClick={addPriceEntry} disabled={priceSaving}>
+                <div className="info-text" style={{ marginTop: 8 }}>⚠️ السجلات قبل هذا التاريخ بالسعر القديم، وبعده بالسعر الجديد</div>
+                <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={addPriceEntry} disabled={priceSaving}>
                   {priceSaving ? 'جاري الحفظ...' : '✓ إضافة السعر'}
                 </button>
               </div>
-
               <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 10, color: 'var(--text-2)' }}>
                 📋 سجل الأسعار ({priceHistory.length} إدخال)
               </div>
               {priceHistory.length === 0 ? (
                 <div className="empty-state" style={{ padding: '20px 0' }}>
                   <div className="empty-icon" style={{ fontSize: '1.5rem' }}>💲</div>
-                  <div className="empty-text">لا يوجد سجل — اضغط "تهيئة الأسعار" أو أضف أول سعر</div>
+                  <div className="empty-text">لا يوجد سجل — أضف أول سعر</div>
                 </div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
@@ -459,34 +450,67 @@ export default function EquipmentPage() {
 
       {/* Retire Modal */}
       {retireModal && (
-        <RetireModal item={retireModal} onConfirm={(date) => retireEquipment(retireModal, date)} onClose={() => setRetireModal(null)} />
+        <RetireDateModal
+          title="⏹️ إيقاف المعدة"
+          item={retireModal}
+          initialDate={today}
+          confirmLabel="تأكيد الإيقاف"
+          confirmClass="btn-danger"
+          warning={`سيتم إيقاف ${retireModal.name} ولن تظهر في الإدخال بعد تاريخ الإيقاف`}
+          onConfirm={(date) => retireEquipment(retireModal, date)}
+          onClose={() => setRetireModal(null)}
+        />
+      )}
+
+      {/* Edit RetiredDate Modal */}
+      {editRetireModal && (
+        <RetireDateModal
+          title="✏️ تعديل تاريخ الإيقاف"
+          item={editRetireModal}
+          initialDate={editRetireModal.retiredDate || today}
+          confirmLabel="حفظ التاريخ"
+          confirmClass="btn-primary"
+          warning={`تعديل تاريخ آخر يوم عمل للمعدة ${editRetireModal.name}`}
+          onConfirm={(date) => updateRetiredDate(editRetireModal, date)}
+          onClose={() => setEditRetireModal(null)}
+        />
       )}
     </div>
   )
 }
 
-function RetireModal({ item, onConfirm, onClose }) {
-  const [retireDate, setRetireDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+// ── Shared retire date picker modal ──────────────────────────────
+function RetireDateModal({ title, item, initialDate, confirmLabel, confirmClass, warning, onConfirm, onClose }) {
+  const [date, setDate] = useState(initialDate)
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 400 }}>
+      <div className="modal" style={{ maxWidth: 420 }}>
         <div className="modal-header">
-          <span className="modal-title">⏹️ إيقاف المعدة</span>
+          <span className="modal-title">{title}</span>
           <button className="btn btn-icon btn-secondary" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          <div className="alert alert-error" style={{ marginBottom: 16 }}>
-            ⚠️ سيتم إيقاف <strong>{item.name}</strong> ولن تظهر بعد تاريخ الإيقاف
+          <div className="alert" style={{ background: 'var(--danger-dim)', color: 'var(--danger)', border: '1px solid rgba(224,80,80,0.3)', marginBottom: 16 }}>
+            ⚠️ {warning}
           </div>
           <div className="form-group">
             <label className="form-label">تاريخ آخر يوم عمل *</label>
-            <input type="date" className="form-control" value={retireDate}
-              onChange={e => setRetireDate(e.target.value)} min={item.startDate} />
+            <input
+              type="date"
+              className="form-control"
+              value={date}
+              min={item.startDate || undefined}
+              max={today}
+              onChange={e => setDate(e.target.value)}
+            />
+            <div className="info-text">لن تظهر سجلات بعد هذا التاريخ في التقارير</div>
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-danger" onClick={() => onConfirm(retireDate)}>تأكيد الإيقاف</button>
+          <button className={`btn ${confirmClass}`} onClick={() => onConfirm(date)} disabled={!date}>
+            {confirmLabel}
+          </button>
         </div>
       </div>
     </div>
