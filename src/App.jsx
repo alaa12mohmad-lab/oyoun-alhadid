@@ -15,7 +15,7 @@ import QuickEntryPage from './pages/QuickEntryPage'
 import ManagerReportPage from './pages/ManagerReportPage'
 import SupplierReportPage from './pages/SupplierReportPage'
 import InvoiceArchivePage from './pages/InvoiceArchivePage'
-
+import DebitNotePage from './pages/DebitNotePage'
 function LoadingScreen() {
   return (
     <div className="loading-page">
@@ -52,6 +52,7 @@ export default function App() {
         case 'sites':           return <SitesPage />
         case 'suppliers':       return <SuppliersPage />
         case 'users':           return <UsersPage />
+        case 'debitnote': return <DebitNotePage />
         default:                return <AdminDashboard setActivePage={setActivePage} />
       }
     }
