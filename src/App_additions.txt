@@ -1,0 +1,8 @@
+// في App.jsx أضف:
+import DebitNotePage from './pages/DebitNotePage'
+
+// في switch case:
+case 'debitnote': return <DebitNotePage />
+
+// في Sidebar.jsx أضف في التقارير:
+{ id: 'debitnote', label: 'ديبت نوت المورد', icon: '📋' },
