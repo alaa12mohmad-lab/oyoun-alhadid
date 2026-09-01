@@ -11,6 +11,7 @@ const adminNav = [
     { id: 'managerreport',  label: 'تقرير المدير',         icon: '📨' },
     { id: 'supplierreport', label: 'تقرير المورد',         icon: '🏢' },
     { id: 'invoicearchive', label: 'أرشيف الفواتير',       icon: '🗄️' },
+    { id: 'debitnote', label: 'ديبت نوت المورد', icon: '📋' },
     { id: 'pdf',            label: 'تقرير PDF مخصص',      icon: '📄' },
   ]},
   { section: 'الإدارة', items: [
