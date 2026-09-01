@@ -6,14 +6,17 @@ import { InvoiceBody } from './SupplierReportPage'
 
 const PRINT_STYLE = `
   @media print {
-    body > * { display: none !important; }
-    #inv-print-root { display: block !important; }
+    body * { visibility: hidden !important; }
+    #inv-print-root * { visibility: visible !important; }
     #inv-print-root {
+      position: absolute !important;
+      top: 0; left: 0; width: 100%;
       background: white !important;
       color: #1a1f2e !important;
       direction: rtl;
       font-family: 'IBM Plex Sans Arabic', sans-serif;
       padding: 24px 32px;
+      box-sizing: border-box;
     }
     .inv-h { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1a1f2e; padding-bottom: 14px; margin-bottom: 16px; }
     .inv-logo { font-size: 20px; font-weight: 800; }
