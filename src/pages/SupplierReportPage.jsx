@@ -6,29 +6,19 @@ import { getPriceForDate } from '../utils/priceHistory'
 import { useAuth } from '../hooks/useAuth'
 
 const PRINT_STYLE = `
-  #inv-print-root {
-    display: none;
-  }
   @media print {
-    html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
-    .app-layout, .sidebar, .main-content, .page, .card, .modal-overlay, nav, header, aside { display: none !important; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { background: white !important; margin: 0 !important; }
+    .app-layout { display: none !important; }
     #inv-print-root {
       display: block !important;
-      position: fixed !important;
-      top: 0 !important; left: 0 !important;
-      width: 100vw !important; height: auto !important;
       background: white !important;
       color: #1a1f2e !important;
       direction: rtl;
       font-family: 'IBM Plex Sans Arabic', sans-serif;
-      padding: 24px 32px !important;
-      margin: 0 !important;
-      box-sizing: border-box !important;
-      z-index: 99999 !important;
-    }
-    #inv-print-root * {
-      color: inherit;
-      background: transparent;
+      padding: 24px 32px;
+      margin: 0;
+      box-sizing: border-box;
     }
     .inv-h { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1a1f2e; padding-bottom: 14px; margin-bottom: 16px; }
     .inv-logo { font-size: 20px; font-weight: 800; }
