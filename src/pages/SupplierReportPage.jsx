@@ -1,35 +1,44 @@
 import { useEffect, useState } from 'react'
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, addDoc, query, where, orderBy, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek } from 'date-fns'
 import { getPriceForDate } from '../utils/priceHistory'
+import { InvoicePrint } from './InvoiceArchivePage'
+import { useAuth } from '../hooks/useAuth'
 
-function generateInvoiceNumber() {
-  const d = new Date()
-  return `INV-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`
+function makeInvoiceNo(supplierName, dateFrom) {
+  const [year, month] = dateFrom.split('-')
+  const short = (supplierName || 'SUP').replace(/\s+/g, '-').substring(0, 10).toUpperCase()
+  const seq   = String(Math.floor(Math.random() * 900) + 100)
+  return `${year}-${month}-${short}-${seq}`
 }
 
 export default function SupplierReportPage() {
-  const [suppliers, setSuppliers]     = useState([])
-  const [allEquipment, setAllEquipment] = useState([])
-  const [supplierEquipment, setSupplierEquipment] = useState([]) // filtered by supplier
+  const { userData } = useAuth()
+  const [suppliers, setSuppliers]         = useState([])
+  const [allEquipment, setAllEquipment]   = useState([])
+  const [supplierEquipment, setSupplierEquipment] = useState([])
   const [filters, setFilters] = useState({
     supplierId:  '',
-    equipmentId: '', // '' = all
+    equipmentId: '',
     dateFrom:    format(startOfMonth(new Date()), 'yyyy-MM-dd'),
     dateTo:      format(endOfMonth(new Date()),   'yyyy-MM-dd'),
     preset:      'month',
-    reportType:  'both',    // 'timesheet' | 'summary' | 'both'
-    version:     'supplier', // 'supplier' | 'accounting'
+    reportType:  'both',
   })
   const [reportData, setReportData] = useState(null)
   const [loading, setLoading]       = useState(false)
   const [generated, setGenerated]   = useState(false)
-  const [invoiceNo]                 = useState(generateInvoiceNumber())
+  const [archiving, setArchiving]   = useState(false)
+  const [archived, setArchived]     = useState(false)
+  const [archivedInvNo, setArchivedInvNo] = useState('')
+
+  // For print preview
+  const [printMode, setPrintMode]   = useState(null) // null | 'supplier' | 'accounting' | 'both'
+  const [invoiceData, setInvoiceData] = useState(null)
 
   useEffect(() => { loadMeta() }, [])
 
-  // Update supplier equipment list when supplierId changes
   useEffect(() => {
     if (filters.supplierId) {
       setSupplierEquipment(allEquipment.filter(e => e.supplierId === filters.supplierId))
@@ -37,6 +46,7 @@ export default function SupplierReportPage() {
       setSupplierEquipment([])
     }
     setFilters(f => ({ ...f, equipmentId: '' }))
+    setGenerated(false); setReportData(null); setArchived(false)
   }, [filters.supplierId, allEquipment])
 
   async function loadMeta() {
@@ -59,12 +69,11 @@ export default function SupplierReportPage() {
 
   async function generate() {
     if (!filters.supplierId) return alert('يرجى اختيار المورد')
-    setLoading(true); setGenerated(false)
+    setLoading(true); setGenerated(false); setArchived(false)
     try {
-      const eqMap = {}; allEquipment.forEach(e => eqMap[e.id] = e)
+      const eqMap    = {}; allEquipment.forEach(e => eqMap[e.id] = e)
       const supplier = suppliers.find(s => s.id === filters.supplierId)
 
-      // Query logs
       let logsSnap = await getDocs(query(
         collection(db, 'logs'),
         where('supplierId', '==', filters.supplierId),
@@ -73,13 +82,8 @@ export default function SupplierReportPage() {
         orderBy('date', 'asc')
       ))
       let logs = logsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (filters.equipmentId) logs = logs.filter(l => l.equipmentId === filters.equipmentId)
 
-      // Filter by equipment if selected
-      if (filters.equipmentId) {
-        logs = logs.filter(l => l.equipmentId === filters.equipmentId)
-      }
-
-      // Load priceHistory
       const usedEqIds = [...new Set(logs.map(l => l.equipmentId))]
       const histories = {}
       await Promise.all(usedEqIds.map(async eqId => {
@@ -93,7 +97,6 @@ export default function SupplierReportPage() {
         return getPriceForDate(history, log.date, fallback)
       }
 
-      // Filter retired
       const filteredLogs = logs.filter(log => {
         const eq = eqMap[log.equipmentId]
         if (eq?.status === 'retired' && eq?.retiredDate) return log.date <= eq.retiredDate
@@ -104,7 +107,6 @@ export default function SupplierReportPage() {
         cost: (log.hours || 0) * getRate(log),
       }))
 
-      // Group by equipment
       const byEquipment = {}
       filteredLogs.forEach(log => {
         if (!byEquipment[log.equipmentId]) {
@@ -118,163 +120,152 @@ export default function SupplierReportPage() {
             logs: [], totalHours: 0, totalCost: 0,
           }
         }
-        const eq = byEquipment[log.equipmentId]
-        eq.logs.push(log)
-        if (log.status === 'working') {
-          eq.totalHours += log.hours || 0
-          eq.totalCost  += log.cost
-        }
+        const e = byEquipment[log.equipmentId]
+        e.logs.push(log)
+        if (log.status === 'working') { e.totalHours += log.hours || 0; e.totalCost += log.cost }
       })
 
-      const eqList      = Object.values(byEquipment).sort((a,b) => a.name.localeCompare(b.name))
-      const grandHours  = eqList.reduce((s,e) => s + e.totalHours, 0)
-      const grandCost   = eqList.reduce((s,e) => s + e.totalCost,  0)
+      const eqList     = Object.values(byEquipment).sort((a,b) => a.name.localeCompare(b.name))
+      const grandHours = eqList.reduce((s,e) => s + e.totalHours, 0)
+      const grandCost  = eqList.reduce((s,e) => s + e.totalCost,  0)
 
-      setReportData({ supplier, eqList, grandHours, grandCost, logs: filteredLogs })
+      setReportData({ supplier, eqList, grandHours, grandCost })
       setGenerated(true)
     } catch(e) { console.error(e) }
     finally { setLoading(false) }
   }
 
+  async function archiveInvoice() {
+    if (!reportData) return
+    setArchiving(true)
+    try {
+      const invNo = makeInvoiceNo(reportData.supplier?.name, filters.dateFrom)
+      const invData = {
+        invoiceNo:       invNo,
+        supplierId:      filters.supplierId,
+        supplierName:    reportData.supplier?.name || '—',
+        supplierContact: reportData.supplier?.contactPerson || '',
+        dateFrom:        filters.dateFrom,
+        dateTo:          filters.dateTo,
+        reportType:      filters.reportType,
+        eqList:          reportData.eqList.map(eq => ({
+          id: eq.id, name: eq.name, type: eq.type, siteName: eq.siteName,
+          hourlyRate: eq.hourlyRate, totalHours: eq.totalHours, totalCost: eq.totalCost,
+          logs: eq.logs.map(l => ({
+            date: l.date, status: l.status, hours: l.hours || 0,
+            effectiveRate: l.effectiveRate, cost: l.cost, notes: l.notes || '',
+            stopReason: l.stopReason || '',
+          }))
+        })),
+        grandHours:  reportData.grandHours,
+        grandCost:   reportData.grandCost,
+        approvedBy:  userData?.name || userData?.email || 'مدير',
+        approvedAt:  serverTimestamp(),
+        createdAt:   serverTimestamp(),
+      }
+      await addDoc(collection(db, 'invoices'), invData)
+      setArchivedInvNo(invNo)
+      setArchived(true)
+    } catch(e) { alert('خطأ في الأرشفة: ' + e.message) }
+    finally { setArchiving(false) }
+  }
+
+  function openInvoicePrint(mode) {
+    if (!reportData) return
+    const invNo = makeInvoiceNo(reportData.supplier?.name, filters.dateFrom)
+    setInvoiceData({
+      invoiceNo:       invNo,
+      supplierName:    reportData.supplier?.name || '—',
+      supplierContact: reportData.supplier?.contactPerson || '',
+      dateFrom:        filters.dateFrom,
+      dateTo:          filters.dateTo,
+      reportType:      filters.reportType,
+      eqList:          reportData.eqList,
+      grandHours:      reportData.grandHours,
+      grandCost:       reportData.grandCost,
+      approvedBy:      userData?.name || userData?.email || 'مدير',
+      approvedAt:      new Date().toISOString(),
+    })
+    setPrintMode(mode)
+    setTimeout(() => window.print(), 400)
+  }
+
   function exportExcel() {
     if (!reportData) return
     import('xlsx').then(XLSX => {
-      const wb         = XLSX.utils.book_new()
-      const showPrice  = filters.version === 'accounting'
-      const supplier   = reportData.supplier
+      const wb = XLSX.utils.book_new()
+      const sup = reportData.supplier
 
-      const summaryRows = [
-        [`تقرير المورد — ${supplier?.name || '—'}`],
-        [`رقم المرجع: ${invoiceNo}`],
-        [`الفترة: ${filters.dateFrom} — ${filters.dateTo}`],
-        [showPrice ? 'نسخة المحاسبة' : 'نسخة المورد'],
-        [],
-        showPrice
-          ? ['#', 'المعدة', 'النوع', 'الموقع', 'ساعات العمل', 'سعر/ساعة', 'الإجمالي (ريال)']
-          : ['#', 'المعدة', 'النوع', 'الموقع', 'ساعات العمل'],
-        ...reportData.eqList.map((e,i) => showPrice
-          ? [i+1, e.name, e.type, e.siteName, e.totalHours, e.hourlyRate, e.totalCost.toFixed(2)]
-          : [i+1, e.name, e.type, e.siteName, e.totalHours]
-        ),
-        [],
-        showPrice
-          ? ['', 'الإجمالي', '', '', reportData.grandHours, '', reportData.grandCost.toFixed(2)]
-          : ['', 'الإجمالي', '', '', reportData.grandHours],
-      ]
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), 'الملخص')
+      // Both versions in one Excel
+      ;[false, true].forEach(showPrice => {
+        const label = showPrice ? 'للمحاسبة (بالسعر)' : 'للمورد (بدون سعر)'
+        const rows = [
+          [`تقرير المورد — ${sup?.name || '—'} | ${label}`],
+          [`الفترة: ${filters.dateFrom} — ${filters.dateTo}`],
+          [],
+          showPrice
+            ? ['#', 'المعدة', 'النوع', 'الموقع', 'ساعات العمل', 'سعر/ساعة', 'الإجمالي (ريال)']
+            : ['#', 'المعدة', 'النوع', 'الموقع', 'ساعات العمل'],
+          ...reportData.eqList.map((e,i) => showPrice
+            ? [i+1, e.name, e.type, e.siteName, e.totalHours, e.hourlyRate, e.totalCost.toFixed(2)]
+            : [i+1, e.name, e.type, e.siteName, e.totalHours]
+          ),
+          [],
+          showPrice
+            ? ['', 'الإجمالي', '', '', reportData.grandHours, '', reportData.grandCost.toFixed(2)]
+            : ['', 'الإجمالي', '', '', reportData.grandHours],
+        ]
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), showPrice ? 'محاسبة' : 'مورد')
+      })
 
+      // Timesheet sheets
       reportData.eqList.forEach(eq => {
         const rows = [
           [`تايم شيت — ${eq.name}`],
-          [`الموقع: ${eq.siteName} | المرجع: ${invoiceNo}`],
-          [],
-          showPrice
-            ? ['#', 'التاريخ', 'الحالة', 'الساعات', 'سعر/ساعة', 'التكلفة', 'ملاحظات']
-            : ['#', 'التاريخ', 'الحالة', 'الساعات', 'ملاحظات'],
-          ...eq.logs.map((l,i) => showPrice
-            ? [i+1, l.date, l.status==='working'?'شغالة':l.status==='breakdown'?'عطل':'صيانة', l.hours||'—', l.effectiveRate, l.cost>0?l.cost.toFixed(2):'—', l.notes||'']
-            : [i+1, l.date, l.status==='working'?'شغالة':l.status==='breakdown'?'عطل':'صيانة', l.hours||'—', l.notes||'']
-          ),
-          [],
-          showPrice ? ['','الإجمالي','',eq.totalHours,'',eq.totalCost.toFixed(2),''] : ['','الإجمالي','',eq.totalHours,''],
+          [`الموقع: ${eq.siteName}`], [],
+          ['#', 'التاريخ', 'الحالة', 'الساعات', 'سعر/ساعة', 'التكلفة', 'ملاحظات'],
+          ...eq.logs.map((l,i) => [i+1, l.date, l.status==='working'?'شغالة':l.status==='breakdown'?'عطل':'صيانة', l.hours||'—', l.effectiveRate, l.cost>0?l.cost.toFixed(2):'—', l.notes||'']),
+          [], ['','الإجمالي','',eq.totalHours,'',eq.totalCost.toFixed(2),''],
         ]
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), eq.name.substring(0,28))
       })
 
-      XLSX.writeFile(wb, `تقرير-${reportData.supplier?.name}-${filters.dateFrom}.xlsx`)
+      XLSX.writeFile(wb, `فاتورة-${sup?.name}-${filters.dateFrom}.xlsx`)
     })
   }
 
-  const showPrice   = filters.version === 'accounting'
-  const supplier    = reportData?.supplier
-
   return (
     <>
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          body { background: white !important; color: #1a1f2e !important; direction: rtl; font-family: 'IBM Plex Sans Arabic', sans-serif; margin: 0; }
-          .print-page { padding: 24px 32px; }
-
-          /* Invoice header */
-          .inv-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0; }
-          .inv-company { }
-          .inv-company-name { font-size: 22px; font-weight: 800; color: #1a1f2e; }
-          .inv-company-sub { font-size: 11px; color: #888; margin-top: 2px; }
-          .inv-badge { display: inline-block; margin-top: 6px; padding: 3px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; }
-          .inv-badge-supplier { background: #e8f4fd; color: #1a6fa0; }
-          .inv-badge-accounting { background: #fef3cd; color: #856404; }
-          .inv-title-block { text-align: left; }
-          .inv-title { font-size: 28px; font-weight: 900; color: #e8a020; letter-spacing: 1px; }
-          .inv-no { font-size: 12px; color: #888; margin-top: 2px; }
-          .inv-date { font-size: 11px; color: #555; }
-
-          /* Divider */
-          .inv-divider { border: none; border-top: 3px solid #1a1f2e; margin: 14px 0; }
-          .inv-divider-gold { border: none; border-top: 2px solid #e8a020; margin: 10px 0; }
-
-          /* Parties */
-          .inv-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
-          .inv-party-label { font-size: 10px; color: #999; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-          .inv-party-name { font-size: 15px; font-weight: 700; color: #1a1f2e; }
-          .inv-party-sub { font-size: 11px; color: #555; }
-          .inv-period-box { background: #f8f8f8; border: 1px solid #ddd; border-radius: 6px; padding: 8px 14px; display: inline-block; font-size: 12px; font-weight: 600; color: #333; }
-
-          /* Summary table */
-          .inv-section-title { font-size: 12px; font-weight: 700; color: #1a1f2e; border-right: 3px solid #e8a020; padding-right: 8px; margin: 16px 0 8px; }
-          .inv-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-          .inv-table th { background: #1a1f2e; color: white; padding: 7px 10px; text-align: right; }
-          .inv-table td { padding: 6px 10px; border-bottom: 1px solid #eee; }
-          .inv-table tr:nth-child(even) td { background: #fafafa; }
-          .inv-table .total-row td { font-weight: 700; background: #f0f0f0; border-top: 2px solid #1a1f2e; }
-
-          /* Timesheet */
-          .ts-header { display: flex; justify-content: space-between; align-items: center; background: #f8f8f8; padding: 8px 12px; border-radius: 6px 6px 0 0; border: 1px solid #ddd; }
-          .ts-eq-name { font-size: 13px; font-weight: 700; color: #1a1f2e; }
-          .ts-eq-sub { font-size: 10px; color: #777; }
-          .ts-total { font-size: 12px; font-weight: 700; color: #e8a020; }
-          .ts-table { width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #ddd; border-top: none; margin-bottom: 14px; }
-          .ts-table th { background: #eee; color: #333; padding: 5px 8px; text-align: right; border-bottom: 1px solid #ddd; }
-          .ts-table td { padding: 4px 8px; border-bottom: 1px solid #f0f0f0; }
-          .ts-table .ts-total-row td { font-weight: 700; background: #f5f5f5; border-top: 1px solid #ddd; }
-
-          /* Grand total box */
-          .grand-total-box { margin-top: 20px; border: 2px solid #1a1f2e; border-radius: 8px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
-          .grand-label { font-size: 14px; font-weight: 700; }
-          .grand-amount { font-size: 22px; font-weight: 900; color: #e8a020; }
-          .grand-hours { font-size: 11px; color: #888; }
-
-          /* Signature */
-          .inv-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; }
-          .sig-box { border-top: 1px solid #333; padding-top: 8px; text-align: center; font-size: 11px; color: #555; }
-
-          /* Footer */
-          .inv-footer { margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; font-size: 9px; color: #aaa; display: flex; justify-content: space-between; }
-
-          .page-break { page-break-before: always; }
-        }
-        @media screen { .print-only { display: none; } }
-      `}</style>
-
-      {/* ── Screen UI ── */}
       <div className="page no-print">
         <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div className="page-title">🏢 تقرير المورد</div>
             <div className="page-sub">تايم شيت وفاتورة احترافية</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {generated && <button className="btn btn-secondary" onClick={exportExcel}>📥 Excel</button>}
-            {generated && <button className="btn btn-primary" onClick={() => window.print()}>🖨️ طباعة / PDF</button>}
-          </div>
+          {generated && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" onClick={exportExcel}>📥 Excel</button>
+              <button className="btn btn-secondary" onClick={() => openInvoicePrint('supplier')}>🖨️ نسخة المورد</button>
+              <button className="btn btn-secondary" onClick={() => openInvoicePrint('accounting')}>🖨️ نسخة المحاسبة</button>
+              <button className="btn btn-secondary" onClick={() => openInvoicePrint('both')}>🖨️ النسختين</button>
+              {!archived ? (
+                <button className="btn btn-primary" onClick={archiveInvoice} disabled={archiving}
+                  style={{ background: 'var(--success)', color: '#fff' }}>
+                  {archiving ? 'جاري الحفظ...' : '✅ اعتماد وأرشفة'}
+                </button>
+              ) : (
+                <div className="badge badge-green" style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
+                  ✅ تم الأرشفة — {archivedInvNo}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
+        {/* Filters */}
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-header"><span className="card-title">🔍 إعدادات التقرير</span></div>
           <div className="card-body">
-
-            {/* Supplier + Equipment */}
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">المورد *</label>
@@ -292,13 +283,9 @@ export default function SupplierReportPage() {
                   <option value="">كل المعدات</option>
                   {supplierEquipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                 </select>
-                {filters.supplierId && supplierEquipment.length === 0 && (
-                  <div className="info-text">لا توجد معدات مسجلة لهذا المورد</div>
-                )}
               </div>
             </div>
 
-            {/* Date preset */}
             <div style={{ marginBottom: 14 }}>
               <label className="form-label">الفترة الزمنية</label>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -323,10 +310,9 @@ export default function SupplierReportPage() {
               </div>
             </div>
 
-            {/* Report type */}
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 20 }}>
               <label className="form-label">نوع التقرير</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
                 {[{ key: 'both', label: '📋 ملخص + تايم شيت' }, { key: 'summary', label: '📊 ملخص فقط' }, { key: 'timesheet', label: '📅 تايم شيت فقط' }].map(t => (
                   <button key={t.key} type="button" onClick={() => setFilters(f => ({ ...f, reportType: t.key }))}
                     style={{ padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font)', fontSize: '0.85rem', border: '1px solid', background: filters.reportType === t.key ? 'var(--accent)' : 'var(--steel-3)', color: filters.reportType === t.key ? '#1a1200' : 'var(--text-2)', borderColor: filters.reportType === t.key ? 'var(--accent)' : 'var(--border)' }}>
@@ -336,39 +322,18 @@ export default function SupplierReportPage() {
               </div>
             </div>
 
-            {/* Version */}
-            <div style={{ marginBottom: 20 }}>
-              <label className="form-label">نسخة التقرير</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => setFilters(f => ({ ...f, version: 'supplier' }))}
-                  style={{ padding: '7px 20px', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font)', fontSize: '0.85rem', border: '1px solid', background: filters.version === 'supplier' ? '#e8f4fd' : 'var(--steel-3)', color: filters.version === 'supplier' ? '#1a6fa0' : 'var(--text-2)', borderColor: filters.version === 'supplier' ? '#1a6fa0' : 'var(--border)', fontWeight: filters.version === 'supplier' ? 700 : 400 }}>
-                  📋 للمورد (بدون سعر)
-                </button>
-                <button type="button" onClick={() => setFilters(f => ({ ...f, version: 'accounting' }))}
-                  style={{ padding: '7px 20px', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font)', fontSize: '0.85rem', border: '1px solid', background: filters.version === 'accounting' ? '#fef3cd' : 'var(--steel-3)', color: filters.version === 'accounting' ? '#856404' : 'var(--text-2)', borderColor: filters.version === 'accounting' ? '#e8a020' : 'var(--border)', fontWeight: filters.version === 'accounting' ? 700 : 400 }}>
-                  💰 للمحاسبة (بالسعر)
-                </button>
-              </div>
-            </div>
-
             <button className="btn btn-primary" onClick={generate} disabled={loading || !filters.supplierId}>
               {loading ? 'جاري الإنشاء...' : '📊 إنشاء التقرير'}
             </button>
           </div>
         </div>
 
-        {/* Screen preview */}
+        {/* Preview */}
         {generated && reportData && (
           <div className="card">
             <div className="card-header">
-              <span className="card-title">
-                معاينة — {supplier?.name}
-                {filters.equipmentId && <span style={{ color: 'var(--accent)', marginRight: 8, fontSize: '0.82rem' }}>({reportData.eqList[0]?.name})</span>}
-                <span style={{ fontSize: '0.75rem', marginRight: 8, color: showPrice ? '#e8a020' : 'var(--info)' }}>
-                  {showPrice ? '💰 نسخة المحاسبة' : '📋 نسخة المورد'}
-                </span>
-              </span>
-              <span className="badge badge-gray">{invoiceNo}</span>
+              <span className="card-title">معاينة — {reportData.supplier?.name}</span>
+              <span className="badge badge-gray">{reportData.eqList.length} معدة</span>
             </div>
             <div className="card-body">
               {/* Summary */}
@@ -377,12 +342,7 @@ export default function SupplierReportPage() {
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: 10, color: 'var(--text-2)' }}>📊 ملخص المعدات</div>
                   <div className="table-wrap" style={{ marginBottom: 20 }}>
                     <table>
-                      <thead>
-                        <tr>
-                          <th>#</th><th>المعدة</th><th>النوع</th><th>الموقع</th><th>ساعات العمل</th>
-                          {showPrice && <><th>سعر/ساعة</th><th>الإجمالي (ريال)</th></>}
-                        </tr>
-                      </thead>
+                      <thead><tr><th>#</th><th>المعدة</th><th>النوع</th><th>الموقع</th><th>ساعات العمل</th><th>سعر/ساعة</th><th>الإجمالي (ريال)</th></tr></thead>
                       <tbody>
                         {reportData.eqList.map((eq, i) => (
                           <tr key={eq.id}>
@@ -391,16 +351,15 @@ export default function SupplierReportPage() {
                             <td><span className="badge badge-gray">{eq.type}</span></td>
                             <td><span className="badge badge-blue">{eq.siteName}</span></td>
                             <td style={{ fontWeight: 600 }}>{eq.totalHours} س</td>
-                            {showPrice && (
-                              <><td style={{ color: 'var(--text-2)' }}>{eq.hourlyRate} ر/س</td>
-                              <td style={{ color: 'var(--accent)', fontWeight: 700 }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td></>
-                            )}
+                            <td style={{ color: 'var(--text-2)' }}>{eq.hourlyRate} ر/س</td>
+                            <td style={{ color: 'var(--accent)', fontWeight: 700 }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
                           </tr>
                         ))}
                         <tr style={{ background: 'var(--accent-dim2)', fontWeight: 700 }}>
                           <td colSpan={4}>الإجمالي</td>
                           <td>{reportData.grandHours} س</td>
-                          {showPrice && <><td></td><td style={{ color: 'var(--accent)' }}>{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td></>}
+                          <td></td>
+                          <td style={{ color: 'var(--accent)', fontSize: '1.05rem' }}>{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
                         </tr>
                       </tbody>
                     </table>
@@ -408,48 +367,33 @@ export default function SupplierReportPage() {
                 </>
               )}
 
-              {/* Timesheet */}
+              {/* Timesheets */}
               {(filters.reportType === 'timesheet' || filters.reportType === 'both') && reportData.eqList.map(eq => (
                 <div key={eq.id} style={{ marginBottom: 20, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                   <div style={{ background: 'var(--steel-3)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between' }}>
-                    <div>
-                      <span style={{ fontWeight: 700 }}>{eq.name}</span>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginRight: 12 }}>{eq.type} · {eq.siteName}</span>
-                    </div>
-                    <div style={{ textAlign: 'left' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--accent)' }}>{eq.totalHours} س</span>
-                      {showPrice && <span style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginRight: 8 }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</span>}
-                    </div>
+                    <div><span style={{ fontWeight: 700 }}>{eq.name}</span><span style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginRight: 10 }}>{eq.type} · {eq.siteName}</span></div>
+                    <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{eq.totalHours} س · {eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</span>
                   </div>
                   <div className="table-wrap">
                     <table>
-                      <thead>
-                        <tr>
-                          <th>#</th><th>التاريخ</th><th>الحالة</th><th>الساعات</th>
-                          {showPrice && <><th>سعر/ساعة</th><th>التكلفة</th></>}
-                          <th>ملاحظات</th>
-                        </tr>
-                      </thead>
+                      <thead><tr><th>#</th><th>التاريخ</th><th>الحالة</th><th>الساعات</th><th>سعر/ساعة</th><th>التكلفة</th><th>ملاحظات</th></tr></thead>
                       <tbody>
                         {eq.logs.map((log, i) => (
                           <tr key={log.id}>
                             <td style={{ color: 'var(--text-3)' }}>{i+1}</td>
                             <td>{log.date}</td>
-                            <td><span className={`badge ${log.status==='working'?'badge-green':log.status==='breakdown'?'badge-red':'badge-gold'}`} style={{ fontSize: '0.72rem' }}>
-                              {log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}
-                            </span></td>
+                            <td><span className={`badge ${log.status==='working'?'badge-green':log.status==='breakdown'?'badge-red':'badge-gold'}`} style={{ fontSize: '0.72rem' }}>{log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}</span></td>
                             <td>{log.hours > 0 ? `${log.hours} س` : '—'}</td>
-                            {showPrice && (
-                              <><td style={{ color: 'var(--text-2)', fontSize: '0.82rem' }}>{log.effectiveRate > 0 ? `${log.effectiveRate} ر` : '—'}</td>
-                              <td style={{ color: 'var(--accent)', fontWeight: 600 }}>{log.cost > 0 ? `${log.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر` : '—'}</td></>
-                            )}
+                            <td style={{ color: 'var(--text-2)', fontSize: '0.82rem' }}>{log.effectiveRate > 0 ? `${log.effectiveRate} ر` : '—'}</td>
+                            <td style={{ color: 'var(--accent)', fontWeight: 600 }}>{log.cost > 0 ? `${log.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر` : '—'}</td>
                             <td style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>{log.notes || '—'}</td>
                           </tr>
                         ))}
                         <tr style={{ background: 'var(--steel-3)', fontWeight: 700 }}>
                           <td colSpan={3}>الإجمالي</td>
                           <td>{eq.totalHours} س</td>
-                          {showPrice && <><td></td><td style={{ color: 'var(--accent)' }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td></>}
+                          <td></td>
+                          <td style={{ color: 'var(--accent)' }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
                           <td></td>
                         </tr>
                       </tbody>
@@ -458,181 +402,132 @@ export default function SupplierReportPage() {
                 </div>
               ))}
 
-              {showPrice && (
-                <div style={{ background: 'var(--accent-dim2)', border: '2px solid var(--accent)', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: '1rem' }}>إجمالي الفاتورة</span>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent)' }}>
-                      {reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>{reportData.grandHours} ساعة عمل</div>
-                  </div>
+              {/* Grand total */}
+              <div style={{ background: 'var(--accent-dim2)', border: '2px solid var(--accent)', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: '1rem' }}>إجمالي الفاتورة</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent)' }}>{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>{reportData.grandHours} ساعة عمل</div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── Print / Invoice ── */}
-      {generated && reportData && (
-        <div className="print-page print-only">
-
-          {/* Invoice header */}
-          <div className="inv-header">
-            <div className="inv-company">
-              <div className="inv-company-name">⚙️ عيون الحديد</div>
-              <div className="inv-company-sub">نظام متابعة المعدات</div>
-              <span className={`inv-badge ${showPrice ? 'inv-badge-accounting' : 'inv-badge-supplier'}`}>
-                {showPrice ? '💰 نسخة المحاسبة' : '📋 نسخة المورد'}
-              </span>
-            </div>
-            <div className="inv-title-block">
-              <div className="inv-title">فاتورة</div>
-              <div className="inv-no">رقم المرجع: {invoiceNo}</div>
-              <div className="inv-date">تاريخ الإصدار: {format(new Date(), 'dd/MM/yyyy')}</div>
-            </div>
-          </div>
-
-          <hr className="inv-divider" />
-
-          {/* Parties */}
-          <div className="inv-parties">
-            <div>
-              <div className="inv-party-label">مقدم من</div>
-              <div className="inv-party-name">شركة عيون الحديد</div>
-              <div className="inv-party-sub">نظام متابعة المعدات</div>
-            </div>
-            <div>
-              <div className="inv-party-label">مقدم إلى</div>
-              <div className="inv-party-name">{supplier?.name}</div>
-              {supplier?.contactPerson && <div className="inv-party-sub">{supplier.contactPerson}</div>}
-              {supplier?.phone && <div className="inv-party-sub">{supplier.phone}</div>}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <span className="inv-period-box">📅 الفترة: {filters.dateFrom} — {filters.dateTo}</span>
-            {filters.equipmentId && reportData.eqList[0] && (
-              <span className="inv-period-box" style={{ marginRight: 10 }}>🏗️ المعدة: {reportData.eqList[0].name}</span>
-            )}
-          </div>
-
-          <hr className="inv-divider-gold" />
-
-          {/* Summary */}
-          {(filters.reportType === 'summary' || filters.reportType === 'both') && (
-            <>
-              <div className="inv-section-title">ملخص المعدات</div>
-              <table className="inv-table">
-                <thead>
-                  <tr>
-                    <th>#</th><th>المعدة</th><th>النوع</th><th>الموقع</th><th>ساعات العمل</th>
-                    {showPrice && <><th>سعر/ساعة (ريال)</th><th>الإجمالي (ريال)</th></>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportData.eqList.map((eq, i) => (
-                    <tr key={eq.id}>
-                      <td>{i+1}</td>
-                      <td style={{ fontWeight: 700 }}>{eq.name}</td>
-                      <td>{eq.type}</td>
-                      <td>{eq.siteName}</td>
-                      <td style={{ fontWeight: 700 }}>{eq.totalHours}</td>
-                      {showPrice && (
-                        <><td>{eq.hourlyRate}</td>
-                        <td style={{ fontWeight: 700, color: '#e8a020' }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td></>
-                      )}
-                    </tr>
-                  ))}
-                  <tr className="total-row">
-                    <td colSpan={4}>الإجمالي</td>
-                    <td>{reportData.grandHours}</td>
-                    {showPrice && <><td></td><td style={{ color: '#e8a020' }}>{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td></>}
-                  </tr>
-                </tbody>
-              </table>
-            </>
-          )}
-
-          {/* Timesheets */}
-          {(filters.reportType === 'timesheet' || filters.reportType === 'both') && reportData.eqList.map((eq, idx) => (
-            <div key={eq.id}>
-              <div className="inv-section-title">تايم شيت — {eq.name}</div>
-              <div className="ts-header">
-                <div>
-                  <div className="ts-eq-name">{eq.name}</div>
-                  <div className="ts-eq-sub">{eq.type} · {eq.siteName}</div>
-                </div>
-                <div className="ts-total">
-                  {eq.totalHours} ساعة
-                  {showPrice && ` · ${eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال`}
-                </div>
-              </div>
-              <table className="ts-table">
-                <thead>
-                  <tr>
-                    <th>#</th><th>التاريخ</th><th>الحالة</th><th>ساعات العمل</th>
-                    {showPrice && <><th>سعر/ساعة</th><th>التكلفة (ريال)</th></>}
-                    <th>ملاحظات</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {eq.logs.map((log, i) => (
-                    <tr key={log.id}>
-                      <td>{i+1}</td>
-                      <td>{log.date}</td>
-                      <td>{log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}</td>
-                      <td>{log.hours > 0 ? log.hours : '—'}</td>
-                      {showPrice && (
-                        <><td>{log.effectiveRate > 0 ? log.effectiveRate : '—'}</td>
-                        <td style={{ fontWeight: 600 }}>{log.cost > 0 ? log.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 }) : '—'}</td></>
-                      )}
-                      <td>{log.notes || '—'}</td>
-                    </tr>
-                  ))}
-                  <tr className="ts-total-row">
-                    <td colSpan={3}>إجمالي {eq.name}</td>
-                    <td>{eq.totalHours} ساعة</td>
-                    {showPrice && <><td></td><td style={{ color: '#e8a020' }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td></>}
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          ))}
-
-          {/* Grand total */}
-          {showPrice && (
-            <div className="grand-total-box">
-              <div>
-                <div className="grand-label">إجمالي المستحقات</div>
-                <div className="grand-hours">{reportData.grandHours} ساعة عمل إجمالية</div>
-              </div>
-              <div style={{ textAlign: 'left' }}>
-                <div className="grand-amount">{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال</div>
-              </div>
+      {/* Print area */}
+      {invoiceData && printMode && (
+        <>
+          {(printMode === 'supplier' || printMode === 'both') && (
+            <div className="print-inv print-only">
+              {printMode === 'both' && <div className="version-title">— نسخة المورد (بدون أسعار) —</div>}
+              <InvoiceBody inv={invoiceData} eqList={invoiceData.eqList} showPrice={false} />
             </div>
           )}
-
-          {/* Signatures */}
-          <div className="inv-signatures">
-            <div className="sig-box">
-              <div style={{ height: 40 }}></div>
-              توقيع المورد / {supplier?.name}
+          {(printMode === 'accounting' || printMode === 'both') && (
+            <div className={`print-inv print-only ${printMode === 'both' ? 'page-break' : ''}`}>
+              {printMode === 'both' && <div className="version-title">— نسخة المحاسبة (بالأسعار) —</div>}
+              <InvoiceBody inv={invoiceData} eqList={invoiceData.eqList} showPrice={true} />
             </div>
-            <div className="sig-box">
-              <div style={{ height: 40 }}></div>
-              توقيع المستلم / عيون الحديد
-            </div>
-          </div>
+          )}
+        </>
+      )}
+    </>
+  )
+}
 
-          <div className="inv-footer">
-            <span>⚙️ عيون الحديد — نظام متابعة المعدات | {invoiceNo}</span>
-            <span>تم إصداره بتاريخ {format(new Date(), 'dd/MM/yyyy HH:mm')}</span>
+// Inline invoice body for print (same as in archive)
+function InvoiceBody({ inv, eqList, showPrice }) {
+  const reportType = inv.reportType || 'both'
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1a1f2e', paddingBottom: 14, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 800 }}>⚙️ عيون الحديد</div>
+          <div style={{ fontSize: 11, color: '#888' }}>نظام متابعة المعدات</div>
+          {inv.approvedAt && <div style={{ display: 'inline-block', border: '3px solid #3eb87a', borderRadius: 8, padding: '4px 14px', color: '#3eb87a', fontSize: 13, fontWeight: 800, transform: 'rotate(-5deg)', marginTop: 8 }}>✓ معتمدة</div>}
+        </div>
+        <div style={{ textAlign: 'left' }}>
+          <div style={{ fontSize: 28, fontWeight: 900, color: '#e8a020' }}>فاتورة</div>
+          <div style={{ fontSize: 12, color: '#888' }}>رقم: {inv.invoiceNo}</div>
+          <div style={{ fontSize: 11, color: '#555' }}>تاريخ الإصدار: {format(new Date(), 'dd/MM/yyyy')}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 14 }}>
+        <div><div style={{ fontSize: 10, color: '#999', marginBottom: 3 }}>مقدم من</div><div style={{ fontSize: 15, fontWeight: 700 }}>شركة عيون الحديد</div></div>
+        <div><div style={{ fontSize: 10, color: '#999', marginBottom: 3 }}>مقدم إلى</div><div style={{ fontSize: 15, fontWeight: 700 }}>{inv.supplierName}</div>{inv.supplierContact && <div style={{ fontSize: 11, color: '#555' }}>{inv.supplierContact}</div>}</div>
+      </div>
+
+      <div style={{ background: '#f5f5f5', padding: '5px 14px', borderRadius: 20, fontSize: 11, fontWeight: 600, display: 'inline-block', marginBottom: 14 }}>📅 الفترة: {inv.dateFrom} — {inv.dateTo}</div>
+      <hr style={{ border: 'none', borderTop: '2px solid #e8a020', margin: '10px 0 14px' }} />
+
+      {(reportType === 'summary' || reportType === 'both') && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, borderRight: '3px solid #e8a020', paddingRight: 8, margin: '14px 0 8px' }}>ملخص المعدات</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead><tr style={{ background: '#1a1f2e', color: 'white' }}><th style={{ padding: '7px 10px', textAlign: 'right' }}>#</th><th style={{ padding: '7px 10px', textAlign: 'right' }}>المعدة</th><th style={{ padding: '7px 10px', textAlign: 'right' }}>النوع</th><th style={{ padding: '7px 10px', textAlign: 'right' }}>الموقع</th><th style={{ padding: '7px 10px', textAlign: 'right' }}>ساعات العمل</th>{showPrice && <><th style={{ padding: '7px 10px', textAlign: 'right' }}>سعر/ساعة</th><th style={{ padding: '7px 10px', textAlign: 'right' }}>الإجمالي (ريال)</th></>}</tr></thead>
+            <tbody>
+              {eqList.map((eq, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? '#fafafa' : 'white' }}>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee' }}>{i+1}</td>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee', fontWeight: 700 }}>{eq.name}</td>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee' }}>{eq.type}</td>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee' }}>{eq.siteName}</td>
+                  <td style={{ padding: '6px 10px', borderBottom: '1px solid #eee', fontWeight: 700 }}>{eq.totalHours}</td>
+                  {showPrice && <><td style={{ padding: '6px 10px', borderBottom: '1px solid #eee' }}>{eq.hourlyRate}</td><td style={{ padding: '6px 10px', borderBottom: '1px solid #eee', fontWeight: 700, color: '#e8a020' }}>{eq.totalCost?.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td></>}
+                </tr>
+              ))}
+              <tr style={{ fontWeight: 700, background: '#f0f0f0', borderTop: '2px solid #1a1f2e' }}>
+                <td colSpan={4} style={{ padding: '6px 10px' }}>الإجمالي</td>
+                <td style={{ padding: '6px 10px' }}>{inv.grandHours}</td>
+                {showPrice && <><td style={{ padding: '6px 10px' }}></td><td style={{ padding: '6px 10px', color: '#e8a020' }}>{inv.grandCost?.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td></>}
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {(reportType === 'timesheet' || reportType === 'both') && eqList.map((eq, idx) => (
+        <div key={idx}>
+          <div style={{ fontSize: 12, fontWeight: 700, borderRight: '3px solid #e8a020', paddingRight: 8, margin: '14px 0 6px' }}>تايم شيت — {eq.name}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', background: '#f8f8f8', padding: '7px 12px', borderRadius: '6px 6px 0 0', border: '1px solid #ddd' }}>
+            <div><div style={{ fontSize: 13, fontWeight: 700 }}>{eq.name}</div><div style={{ fontSize: 10, color: '#777' }}>{eq.type} · {eq.siteName}</div></div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#e8a020' }}>{eq.totalHours} ساعة{showPrice ? ` · ${eq.totalCost?.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال` : ''}</div>
           </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, border: '1px solid #ddd', borderTop: 'none', marginBottom: 12 }}>
+            <thead><tr style={{ background: '#eee' }}><th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>#</th><th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>التاريخ</th><th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>الحالة</th><th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>ساعات العمل</th>{showPrice && <><th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>سعر/ساعة</th><th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>التكلفة (ريال)</th></>}<th style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>ملاحظات</th></tr></thead>
+            <tbody>
+              {(eq.logs || []).map((log, i) => (
+                <tr key={i}><td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>{i+1}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>{log.date}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>{log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>{log.hours > 0 ? log.hours : '—'}</td>{showPrice && <><td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>{log.effectiveRate > 0 ? log.effectiveRate : '—'}</td><td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0', fontWeight: 600 }}>{log.cost > 0 ? log.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 }) : '—'}</td></>}<td style={{ padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>{log.notes || '—'}</td></tr>
+              ))}
+              <tr style={{ fontWeight: 700, background: '#f5f5f5', borderTop: '1px solid #ddd' }}>
+                <td colSpan={3} style={{ padding: '4px 8px' }}>إجمالي {eq.name}</td>
+                <td style={{ padding: '4px 8px' }}>{eq.totalHours} ساعة</td>
+                {showPrice && <><td style={{ padding: '4px 8px' }}></td><td style={{ padding: '4px 8px', color: '#e8a020' }}>{eq.totalCost?.toLocaleString('ar-SA', { maximumFractionDigits: 0 })}</td></>}
+                <td style={{ padding: '4px 8px' }}></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      {showPrice && (
+        <div style={{ marginTop: 18, border: '2px solid #1a1f2e', borderRadius: 8, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div><div style={{ fontSize: 14, fontWeight: 700 }}>إجمالي المستحقات</div><div style={{ fontSize: 11, color: '#888' }}>{inv.grandHours} ساعة عمل إجمالية</div></div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: '#e8a020' }}>{inv.grandCost?.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال</div>
         </div>
       )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, marginTop: 28 }}>
+        <div style={{ borderTop: '1px solid #333', paddingTop: 8, textAlign: 'center', fontSize: 11, color: '#555' }}><div style={{ height: 40 }}></div>توقيع المورد / {inv.supplierName}</div>
+        <div style={{ borderTop: '1px solid #333', paddingTop: 8, textAlign: 'center', fontSize: 11, color: '#555' }}><div style={{ height: 40 }}></div>توقيع المستلم / عيون الحديد</div>
+      </div>
+
+      <div style={{ marginTop: 18, borderTop: '1px solid #eee', paddingTop: 8, fontSize: 9, color: '#aaa', display: 'flex', justifyContent: 'space-between' }}>
+        <span>⚙️ عيون الحديد — {inv.invoiceNo}</span>
+        <span>معتمد بواسطة: {inv.approvedBy}</span>
+      </div>
     </>
   )
 }

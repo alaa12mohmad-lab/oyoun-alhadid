@@ -14,6 +14,7 @@ import PdfReportPage from './pages/PdfReportPage'
 import QuickEntryPage from './pages/QuickEntryPage'
 import ManagerReportPage from './pages/ManagerReportPage'
 import SupplierReportPage from './pages/SupplierReportPage'
+import InvoiceArchivePage from './pages/InvoiceArchivePage'
 
 function LoadingScreen() {
   return (
@@ -45,6 +46,7 @@ export default function App() {
         case 'reports':         return <ReportsPage />
         case 'managerreport':   return <ManagerReportPage />
         case 'supplierreport':  return <SupplierReportPage />
+        case 'invoicearchive':  return <InvoiceArchivePage />
         case 'pdf':             return <PdfReportPage />
         case 'equipment':       return <EquipmentPage />
         case 'sites':           return <SitesPage />
@@ -55,12 +57,12 @@ export default function App() {
     }
     if (role === 'supervisor') {
       switch (activePage) {
-        case 'dashboard':       return <SupervisorDashboard setActivePage={setActivePage} />
-        case 'quickentry':      return <QuickEntryPage />
-        case 'log':             return <LogPage />
-        case 'history':         return <ReportsPage />
-        case 'pdf':             return <PdfReportPage />
-        default:                return <SupervisorDashboard setActivePage={setActivePage} />
+        case 'dashboard':  return <SupervisorDashboard setActivePage={setActivePage} />
+        case 'quickentry': return <QuickEntryPage />
+        case 'log':        return <LogPage />
+        case 'history':    return <ReportsPage />
+        case 'pdf':        return <PdfReportPage />
+        default:           return <SupervisorDashboard setActivePage={setActivePage} />
       }
     }
     switch (activePage) {
