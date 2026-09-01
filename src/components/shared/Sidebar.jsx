@@ -2,20 +2,21 @@ import { useAuth } from '../../hooks/useAuth'
 
 const adminNav = [
   { section: 'الرئيسية', items: [
-    { id: 'dashboard',     label: 'لوحة التحكم',        icon: '📊' },
-    { id: 'quickentry',    label: 'إدخال سريع أسبوعي',  icon: '⚡' },
-    { id: 'log',           label: 'تسجيل يومي',          icon: '⏱️' },
+    { id: 'dashboard',      label: 'لوحة التحكم',        icon: '📊' },
+    { id: 'quickentry',     label: 'إدخال سريع أسبوعي',  icon: '⚡' },
+    { id: 'log',            label: 'تسجيل يومي',          icon: '⏱️' },
   ]},
   { section: 'التقارير', items: [
-    { id: 'reports',       label: 'التقارير الأسبوعية',  icon: '📋' },
-    { id: 'managerreport', label: 'تقرير المدير',         icon: '📨' },
-    { id: 'pdf',           label: 'تقرير PDF مخصص',      icon: '📄' },
+    { id: 'reports',        label: 'التقارير الأسبوعية',  icon: '📋' },
+    { id: 'managerreport',  label: 'تقرير المدير',         icon: '📨' },
+    { id: 'supplierreport', label: 'تقرير المورد',         icon: '🏢' },
+    { id: 'pdf',            label: 'تقرير PDF مخصص',      icon: '📄' },
   ]},
   { section: 'الإدارة', items: [
-    { id: 'equipment',     label: 'المعدات',              icon: '🏗️' },
-    { id: 'sites',         label: 'المواقع',              icon: '📍' },
-    { id: 'suppliers',     label: 'الموردون',             icon: '🏢' },
-    { id: 'users',         label: 'المستخدمون',           icon: '👥' },
+    { id: 'equipment',      label: 'المعدات',              icon: '🏗️' },
+    { id: 'sites',          label: 'المواقع',              icon: '📍' },
+    { id: 'suppliers',      label: 'الموردون',             icon: '🏢' },
+    { id: 'users',          label: 'المستخدمون',           icon: '👥' },
   ]},
 ]
 
@@ -41,7 +42,7 @@ export default function Sidebar({ activePage, setActivePage }) {
   if (!userData) return null
 
   const role = userData.role
-  const nav = role === 'admin' ? adminNav : role === 'supervisor' ? supervisorNav : viewerNav
+  const nav  = role === 'admin' ? adminNav : role === 'supervisor' ? supervisorNav : viewerNav
 
   const roleBadge = role === 'admin'
     ? { label: 'مدير النظام', cls: 'badge-gold' }
