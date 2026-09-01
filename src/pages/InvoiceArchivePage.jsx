@@ -5,18 +5,19 @@ import { format } from 'date-fns'
 import { InvoiceBody } from './SupplierReportPage'
 
 const PRINT_STYLE = `
+  #inv-print-root {
+    display: none;
+  }
   @media print {
-    body * { visibility: hidden !important; }
-    #inv-print-root * { visibility: visible !important; }
+    .app-layout, .sidebar, .main-content, .page, .card, .modal-overlay { display: none !important; }
     #inv-print-root {
-      position: absolute !important;
-      top: 0; left: 0; width: 100%;
+      display: block !important;
       background: white !important;
       color: #1a1f2e !important;
       direction: rtl;
       font-family: 'IBM Plex Sans Arabic', sans-serif;
       padding: 24px 32px;
-      box-sizing: border-box;
+      margin: 0;
     }
     .inv-h { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1a1f2e; padding-bottom: 14px; margin-bottom: 16px; }
     .inv-logo { font-size: 20px; font-weight: 800; }
