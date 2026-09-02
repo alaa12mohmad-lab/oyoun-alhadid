@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, query, orderBy, writeBatch
+  doc, serverTimestamp, query, orderBy, where, writeBatch
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { format } from 'date-fns'
@@ -20,11 +20,13 @@ export default function EquipmentPage() {
   const [saving, setSaving]         = useState(false)
   const [search, setSearch]         = useState('')
   const [filterSite, setFilterSite] = useState('')
-  const [showRetired, setShowRetired] = useState(false)
-  const [retireModal, setRetireModal] = useState(null)
-  const [editRetireModal, setEditRetireModal] = useState(null) // edit retiredDate
-  const [initLoading, setInitLoading] = useState(false)
-  const [initMsg, setInitMsg]       = useState('')
+  const [showRetired, setShowRetired]     = useState(false)
+  const [retireModal, setRetireModal]     = useState(null)
+  const [editRetireModal, setEditRetireModal] = useState(null)
+  const [deleteModal, setDeleteModal]     = useState(null)
+  const [deleting, setDeleting]           = useState(false)
+  const [initLoading, setInitLoading]     = useState(false)
+  const [initMsg, setInitMsg]             = useState('')
 
   // Price history modal
   const [priceModal, setPriceModal]     = useState(null)
@@ -66,17 +68,17 @@ export default function EquipmentPage() {
       const earliestDate = {}
       allLogsSnap.docs.forEach(d => {
         const log = d.data()
-        if (!earliestDate[log.equipmentId] || log.date < earliestDate[log.equipmentId]) {
+        if (!earliestDate[log.equipmentId] || log.date < earliestDate[log.equipmentId])
           earliestDate[log.equipmentId] = log.date
-        }
       })
       for (const eq of items) {
         if (eq.status === 'retired') continue
         const snap = await getDocs(collection(db, 'equipment', eq.id, 'priceHistory'))
         if (snap.empty && eq.hourlyRate) {
-          const fromDate = earliestDate[eq.id] || eq.startDate || today
           await addDoc(collection(db, 'equipment', eq.id, 'priceHistory'), {
-            price: parseFloat(eq.hourlyRate), fromDate, toDate: null, createdAt: serverTimestamp(),
+            price: parseFloat(eq.hourlyRate),
+            fromDate: earliestDate[eq.id] || eq.startDate || today,
+            toDate: null, createdAt: serverTimestamp(),
           })
           count++
         }
@@ -167,42 +169,67 @@ export default function EquipmentPage() {
     setModal(false); setSaving(false); loadAll()
   }
 
+  // ── DELETE with cascade ───────────────────────────────────────
+  async function confirmDelete(item) {
+    setDeleteModal(item)
+  }
+
+  async function executeDelete() {
+    if (!deleteModal) return
+    setDeleting(true)
+    try {
+      const eqId = deleteModal.id
+
+      // 1. Count logs to show user
+      const logsSnap = await getDocs(query(collection(db, 'logs'), where('equipmentId', '==', eqId)))
+      const logCount = logsSnap.size
+
+      // 2. Delete all logs in batches (Firestore batch max 500)
+      const logDocs = logsSnap.docs
+      for (let i = 0; i < logDocs.length; i += 400) {
+        const batch = writeBatch(db)
+        logDocs.slice(i, i + 400).forEach(d => batch.delete(d.ref))
+        await batch.commit()
+      }
+
+      // 3. Delete priceHistory subcollection
+      const priceSnap = await getDocs(collection(db, 'equipment', eqId, 'priceHistory'))
+      if (priceSnap.size > 0) {
+        const batch = writeBatch(db)
+        priceSnap.docs.forEach(d => batch.delete(d.ref))
+        await batch.commit()
+      }
+
+      // 4. Delete equipment document
+      await deleteDoc(doc(db, 'equipment', eqId))
+
+      setDeleteModal(null)
+      alert(`✅ تم حذف المعدة و ${logCount} سجل دوام`)
+      loadAll()
+    } catch (e) {
+      alert('خطأ في الحذف: ' + e.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   // ── Retire + Edit retiredDate ─────────────────────────────────
   async function retireEquipment(item, retireDate) {
-    if (!retireDate) return alert('يرجى تحديد تاريخ الإيقاف')
-    // Validate format yyyy-MM-dd
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(retireDate)) return alert('تنسيق التاريخ غير صحيح')
-    await updateDoc(doc(db, 'equipment', item.id), {
-      status: 'retired',
-      retiredDate: retireDate,
-      updatedAt: serverTimestamp(),
-    })
+    if (!retireDate || !/^\d{4}-\d{2}-\d{2}$/.test(retireDate)) return alert('تاريخ غير صحيح')
+    await updateDoc(doc(db, 'equipment', item.id), { status: 'retired', retiredDate, updatedAt: serverTimestamp() })
     setRetireModal(null); loadAll()
   }
 
   async function updateRetiredDate(item, newDate) {
-    if (!newDate) return alert('يرجى تحديد تاريخ الإيقاف')
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return alert('تنسيق التاريخ غير صحيح')
-    await updateDoc(doc(db, 'equipment', item.id), {
-      retiredDate: newDate,
-      updatedAt: serverTimestamp(),
-    })
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return alert('تاريخ غير صحيح')
+    await updateDoc(doc(db, 'equipment', item.id), { retiredDate: newDate, updatedAt: serverTimestamp() })
     setEditRetireModal(null); loadAll()
   }
 
   async function reactivate(item) {
     if (!confirm(`إعادة تفعيل ${item.name}؟ سيتم مسح تاريخ الإيقاف.`)) return
-    await updateDoc(doc(db, 'equipment', item.id), {
-      status: 'active',
-      retiredDate: null,
-      updatedAt: serverTimestamp(),
-    })
+    await updateDoc(doc(db, 'equipment', item.id), { status: 'active', retiredDate: null, updatedAt: serverTimestamp() })
     loadAll()
-  }
-
-  async function remove(id) {
-    if (!confirm('حذف هذه المعدة نهائياً؟')) return
-    await deleteDoc(doc(db, 'equipment', id)); loadAll()
   }
 
   const activeItems  = items.filter(i => i.status !== 'retired')
@@ -223,7 +250,7 @@ export default function EquipmentPage() {
           <div className="page-sub">{activeItems.length} نشطة{retiredItems.length > 0 ? ` · ${retiredItems.length} متوقفة` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary" onClick={initAllPrices} disabled={initLoading} title="تهيئة سجل أسعار للمعدات التي ليس لها سجل">
+          <button className="btn btn-secondary" onClick={initAllPrices} disabled={initLoading}>
             {initLoading ? 'جاري...' : '💲 تهيئة الأسعار'}
           </button>
           <button className="btn btn-primary" onClick={openAdd}>+ إضافة معدة</button>
@@ -282,9 +309,7 @@ export default function EquipmentPage() {
                             {item.retiredDate || '—'}
                           </span>
                           <button className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                            onClick={() => setEditRetireModal(item)} title="تعديل تاريخ الإيقاف">
-                            ✏️
-                          </button>
+                            onClick={() => setEditRetireModal(item)} title="تعديل تاريخ الإيقاف">✏️</button>
                         </div>
                       </td>
                     )}
@@ -299,7 +324,7 @@ export default function EquipmentPage() {
                         ) : (
                           <>
                             <button className="btn btn-secondary btn-sm" onClick={() => reactivate(item)} title="إعادة تفعيل">▶️</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => remove(item.id)} title="حذف نهائي">🗑️</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => confirmDelete(item)} title="حذف نهائي مع السجلات">🗑️</button>
                           </>
                         )}
                       </div>
@@ -361,12 +386,43 @@ export default function EquipmentPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">ملاحظات</label>
-                <input className="form-control" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="أي ملاحظات..." />
+                <input className="form-control" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(false)}>إلغاء</button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'حفظ...' : 'حفظ'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !deleting && setDeleteModal(null)}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <span className="modal-title">🗑️ حذف المعدة نهائياً</span>
+              <button className="btn btn-icon btn-secondary" onClick={() => !deleting && setDeleteModal(null)} disabled={deleting}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="alert" style={{ background: 'rgba(224,80,80,0.1)', color: 'var(--danger)', border: '1px solid rgba(224,80,80,0.3)', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+                ⚠️ تحذير — هذا الإجراء لا يمكن التراجع عنه
+              </div>
+              <div style={{ fontSize: '0.92rem', lineHeight: 1.8 }}>
+                سيتم حذف:
+                <ul style={{ margin: '8px 0', paddingRight: 20 }}>
+                  <li>المعدة: <strong>{deleteModal.name}</strong></li>
+                  <li>كل سجلات الدوام المرتبطة بها</li>
+                  <li>سجل الأسعار بتاعها</li>
+                </ul>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteModal(null)} disabled={deleting}>إلغاء</button>
+              <button className="btn btn-danger" onClick={executeDelete} disabled={deleting}>
+                {deleting ? 'جاري الحذف...' : '🗑️ تأكيد الحذف النهائي'}
+              </button>
             </div>
           </div>
         </div>
@@ -431,9 +487,7 @@ export default function EquipmentPage() {
                           {entry.toDate || 'مستمر ✓'}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
-                          {i !== 0 && (
-                            <button className="btn btn-danger btn-sm btn-icon" onClick={() => deletePriceEntry(entry.id)}>🗑️</button>
-                          )}
+                          {i !== 0 && <button className="btn btn-danger btn-sm btn-icon" onClick={() => deletePriceEntry(entry.id)}>🗑️</button>}
                         </td>
                       </tr>
                     ))}
@@ -450,36 +504,25 @@ export default function EquipmentPage() {
 
       {/* Retire Modal */}
       {retireModal && (
-        <RetireDateModal
-          title="⏹️ إيقاف المعدة"
-          item={retireModal}
-          initialDate={today}
-          confirmLabel="تأكيد الإيقاف"
-          confirmClass="btn-danger"
+        <RetireDateModal title="⏹️ إيقاف المعدة" item={retireModal} initialDate={today}
+          confirmLabel="تأكيد الإيقاف" confirmClass="btn-danger"
           warning={`سيتم إيقاف ${retireModal.name} ولن تظهر في الإدخال بعد تاريخ الإيقاف`}
           onConfirm={(date) => retireEquipment(retireModal, date)}
-          onClose={() => setRetireModal(null)}
-        />
+          onClose={() => setRetireModal(null)} />
       )}
 
       {/* Edit RetiredDate Modal */}
       {editRetireModal && (
-        <RetireDateModal
-          title="✏️ تعديل تاريخ الإيقاف"
-          item={editRetireModal}
-          initialDate={editRetireModal.retiredDate || today}
-          confirmLabel="حفظ التاريخ"
-          confirmClass="btn-primary"
+        <RetireDateModal title="✏️ تعديل تاريخ الإيقاف" item={editRetireModal} initialDate={editRetireModal.retiredDate || today}
+          confirmLabel="حفظ التاريخ" confirmClass="btn-primary"
           warning={`تعديل تاريخ آخر يوم عمل للمعدة ${editRetireModal.name}`}
           onConfirm={(date) => updateRetiredDate(editRetireModal, date)}
-          onClose={() => setEditRetireModal(null)}
-        />
+          onClose={() => setEditRetireModal(null)} />
       )}
     </div>
   )
 }
 
-// ── Shared retire date picker modal ──────────────────────────────
 function RetireDateModal({ title, item, initialDate, confirmLabel, confirmClass, warning, onConfirm, onClose }) {
   const [date, setDate] = useState(initialDate)
   return (
@@ -495,22 +538,15 @@ function RetireDateModal({ title, item, initialDate, confirmLabel, confirmClass,
           </div>
           <div className="form-group">
             <label className="form-label">تاريخ آخر يوم عمل *</label>
-            <input
-              type="date"
-              className="form-control"
-              value={date}
-              min={item.startDate || undefined}
-              max={today}
-              onChange={e => setDate(e.target.value)}
-            />
+            <input type="date" className="form-control" value={date}
+              min={item.startDate || undefined} max={today}
+              onChange={e => setDate(e.target.value)} />
             <div className="info-text">لن تظهر سجلات بعد هذا التاريخ في التقارير</div>
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>إلغاء</button>
-          <button className={`btn ${confirmClass}`} onClick={() => onConfirm(date)} disabled={!date}>
-            {confirmLabel}
-          </button>
+          <button className={`btn ${confirmClass}`} onClick={() => onConfirm(date)} disabled={!date}>{confirmLabel}</button>
         </div>
       </div>
     </div>
