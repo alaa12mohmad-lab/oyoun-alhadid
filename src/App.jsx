@@ -16,6 +16,7 @@ import ManagerReportPage from './pages/ManagerReportPage'
 import SupplierReportPage from './pages/SupplierReportPage'
 import InvoiceArchivePage from './pages/InvoiceArchivePage'
 import DebitNotePage from './pages/DebitNotePage'
+import DataCleanupPage from './pages/DataCleanupPage'
 function LoadingScreen() {
   return (
     <div className="loading-page">
@@ -53,6 +54,7 @@ export default function App() {
         case 'suppliers':       return <SuppliersPage />
         case 'users':           return <UsersPage />
         case 'debitnote': return <DebitNotePage />
+        case 'cleanup': return <DataCleanupPage />
         default:                return <AdminDashboard setActivePage={setActivePage} />
       }
     }
