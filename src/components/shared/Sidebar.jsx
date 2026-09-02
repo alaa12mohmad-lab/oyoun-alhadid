@@ -19,6 +19,7 @@ const adminNav = [
     { id: 'sites',          label: 'المواقع',              icon: '📍' },
     { id: 'suppliers',      label: 'الموردون',             icon: '🏢' },
     { id: 'users',          label: 'المستخدمون',           icon: '👥' },
+    { id: 'cleanup', label: 'تنظيف البيانات', icon: '🧹' },
   ]},
 ]
 
