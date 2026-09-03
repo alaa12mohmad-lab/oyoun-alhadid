@@ -488,7 +488,7 @@ export default function EquipmentPage() {
                           {entry.toDate || 'مستمر ✓'}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
-                          {i !== 0 && <button className="btn btn-danger btn-sm btn-icon" onClick={() => deletePriceEntry(entry.id)}>🗑️</button>}
+                          <button className="btn btn-danger btn-sm btn-icon" onClick={() => deletePriceEntry(entry.id)}>🗑️</button>
                         </td>
                       </tr>
                     ))}
