@@ -323,6 +323,7 @@ export default function EquipmentPage() {
                           </>
                         ) : (
                           <>
+                            <button className="btn btn-secondary btn-sm" onClick={() => openPriceModal(item)} title="سجل الأسعار">💲</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => reactivate(item)} title="إعادة تفعيل">▶️</button>
                             <button className="btn btn-danger btn-sm" onClick={() => confirmDelete(item)} title="حذف نهائي مع السجلات">🗑️</button>
                           </>
