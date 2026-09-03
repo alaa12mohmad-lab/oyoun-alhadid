@@ -216,7 +216,7 @@ export default function EquipmentPage() {
   // ── Retire + Edit retiredDate ─────────────────────────────────
   async function retireEquipment(item, retireDate) {
     if (!retireDate || !/^\d{4}-\d{2}-\d{2}$/.test(retireDate)) return alert('تاريخ غير صحيح')
-    await updateDoc(doc(db, 'equipment', item.id), { status: 'retired', retiredDate, updatedAt: serverTimestamp() })
+    await updateDoc(doc(db, 'equipment', item.id), { status: 'retired', retiredDate: retireDate, updatedAt: serverTimestamp() })
     setRetireModal(null); loadAll()
   }
 
