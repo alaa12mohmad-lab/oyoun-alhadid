@@ -20,7 +20,7 @@ export default function InvoiceArchivePage() {
   }
 
   async function remove(id) {
-    if (!confirm('حذف هذه الفاتورة من الأرشيف نهائياً؟')) return
+    if (!confirm('حذف هذه المسودة من الأرشيف نهائياً؟')) return
     await deleteDoc(doc(db, 'invoices', id))
     load()
   }
@@ -41,8 +41,8 @@ export default function InvoiceArchivePage() {
       <div className="page">
         <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
           <div>
-            <div className="page-title">🗄️ أرشيف الفواتير</div>
-            <div className="page-sub">{invoices.length} فاتورة محفوظة</div>
+            <div className="page-title">🗄️ أرشيف المسودات</div>
+            <div className="page-sub">{invoices.length} مسودة محفوظة</div>
           </div>
         </div>
 

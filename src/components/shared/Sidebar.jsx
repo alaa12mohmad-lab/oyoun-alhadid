@@ -8,7 +8,7 @@ const adminNav = [
   ]},
   { section: 'تقارير الموردين', items: [
     { id: 'supplierreport', label: 'تقرير المورد',           icon: '🏢' },
-    { id: 'invoicearchive', label: 'أرشيف الفواتير',         icon: '🗄️' },
+    { id: 'invoicearchive', label: 'أرشيف المسودات',         icon: '🗄️' },
     { id: 'debitnote',      label: 'ديبت نوت المورد',        icon: '📋' },
   ]},
   { section: 'تقارير العملاء', items: [

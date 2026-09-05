@@ -177,7 +177,7 @@ export default function SupplierReportPage() {
         ]
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), eq.name.substring(0,28))
       })
-      XLSX.writeFile(wb, `فاتورة-${reportData.supplier?.name}-${filters.dateFrom}.xlsx`)
+      XLSX.writeFile(wb, `مسودة-${reportData.supplier?.name}-${filters.dateFrom}.xlsx`)
     })
   }
 
@@ -187,7 +187,7 @@ export default function SupplierReportPage() {
         <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div className="page-title">🏢 تقرير المورد</div>
-            <div className="page-sub">تايم شيت وفاتورة احترافية</div>
+            <div className="page-sub">تايم شيت ومسودة</div>
           </div>
           {generated && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -337,7 +337,7 @@ export default function SupplierReportPage() {
                 </div>
               ))}
               <div style={{ background: 'var(--accent-dim2)', border: '2px solid var(--accent)', borderRadius: 10, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                <span style={{ fontWeight: 700, fontSize: '1rem' }}>إجمالي الفاتورة</span>
+                <span style={{ fontWeight: 700, fontSize: '1rem' }}>الإجمالي</span>
                 <div style={{ textAlign: 'left' }}>
                   <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent)' }}>{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ريال</div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>{reportData.grandHours} ساعة عمل</div>
@@ -371,7 +371,7 @@ export function InvoiceBody({ inv, showPrice }) {
           {approvedAt && <div className="inv-stamp">✓ معتمدة</div>}
         </div>
         <div className="inv-title-block">
-          <div className="inv-title">فاتورة</div>
+          <div className="inv-title">مسودة</div>
           <div className="inv-no">رقم: {inv.invoiceNo}</div>
           <div className="inv-no">تاريخ الإصدار: {format(new Date(), 'dd/MM/yyyy')}</div>
           {approvedAt && <div className="inv-no">تاريخ الاعتماد: {format(approvedAt, 'dd/MM/yyyy')}</div>}

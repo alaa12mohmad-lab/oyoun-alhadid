@@ -102,7 +102,7 @@ function invoiceBodyHtml(inv, showPrice) {
         ${approvedAt ? '<div class="inv-stamp">✓ معتمدة</div>' : ''}
       </div>
       <div style="text-align:left">
-        <div class="inv-title">فاتورة</div>
+        <div class="inv-title">مسودة</div>
         <div class="inv-no">رقم: ${inv.invoiceNo}</div>
         <div class="inv-no">تاريخ الإصدار: ${format(new Date(), 'dd/MM/yyyy')}</div>
         ${approvedAt ? `<div class="inv-no">تاريخ الاعتماد: ${format(approvedAt, 'dd/MM/yyyy')}</div>` : ''}
