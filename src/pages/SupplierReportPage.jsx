@@ -333,18 +333,24 @@ export default function SupplierReportPage() {
                               <input type="number" className="form-control"
                                 style={{ maxWidth: 100, fontSize: '0.82rem', padding: '5px 8px' }}
                                 placeholder="0"
-                                value={eqRowsWithTransport.find(r => r.id === eq.id)?.transport || ''}
+                                defaultValue=""
+                                data-eqid={eq.id}
+                                data-field="transport"
+                                onBlur={e => updateTransport(eq.id, 'transport', e.target.value)}
                                 onChange={e => updateTransport(eq.id, 'transport', e.target.value)} />
                             </td>
                             <td>
                               <input className="form-control"
                                 style={{ maxWidth: 130, fontSize: '0.82rem', padding: '5px 8px' }}
                                 placeholder="مثال: من جدة"
-                                value={eqRowsWithTransport.find(r => r.id === eq.id)?.transportNote || ''}
+                                defaultValue=""
+                                data-eqid={eq.id}
+                                data-field="transportNote"
+                                onBlur={e => updateTransport(eq.id, 'transportNote', e.target.value)}
                                 onChange={e => updateTransport(eq.id, 'transportNote', e.target.value)} />
                             </td>
                             <td style={{ color: 'var(--info)', fontWeight: 700 }}>
-                              {(eq.totalCost + (eqRowsWithTransport.find(r => r.id === eq.id)?.transport || 0)).toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر
+                              {(eq.totalCost + (transportRef.current[eq.id]?.transport || 0)).toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر
                             </td>
                           </tr>
                         ))}
