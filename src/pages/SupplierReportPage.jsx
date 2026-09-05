@@ -151,6 +151,7 @@ export default function SupplierReportPage() {
     })
     const grandTransport = Object.values(domTransport).reduce((s,v) => s + v, 0)
     console.log('🚛 domTransport:', domTransport, 'grand:', grandTransport)
+    console.log('🚛 eqList transport:', inv.eqList?.map(e => ({name: e.name, transport: e.transport})))
     const inv = {
       invoiceNo:       makeInvoiceNo(reportData.supplier?.name, filters.dateFrom),
       supplierName:    reportData.supplier?.name || '—',
@@ -168,6 +169,9 @@ export default function SupplierReportPage() {
       approvedBy: userData?.name || userData?.email || 'مدير',
       approvedAt: null,
     }
+    console.log('🚛 inv.grandTransport:', inv.grandTransport)
+    console.log('🚛 inv.eqList[0].transport:', inv.eqList?.[0]?.transport)
+    window._lastInv = inv
     printInvoiceInWindow(inv, mode)
   }
 
