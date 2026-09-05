@@ -91,8 +91,24 @@ export default function SupplierReportPage() {
         .filter(log => { const eq = eqMap[log.equipmentId]; return !(eq?.status === 'retired' && eq?.retiredDate && log.date > eq.retiredDate) })
         .map(log => ({ ...log, effectiveRate: getRate(log), cost: (log.hours || 0) * getRate(log) }))
 
-      const byEq = {}
+      // Find last working day per retired equipment
+      const lastWorkingDay = {}
       filteredLogs.forEach(log => {
+        const eq = eqMap[log.equipmentId]
+        if (eq?.status === 'retired' && log.status === 'working') {
+          if (!lastWorkingDay[log.equipmentId] || log.date > lastWorkingDay[log.equipmentId])
+            lastWorkingDay[log.equipmentId] = log.date
+        }
+      })
+
+      // Mark last working day
+      const markedLogs = filteredLogs.map(log => ({
+        ...log,
+        isLastWorkingDay: lastWorkingDay[log.equipmentId] === log.date && log.status === 'working',
+      }))
+
+      const byEq = {}
+      markedLogs.forEach(log => {
         if (!byEq[log.equipmentId]) {
           const eq = eqMap[log.equipmentId]
           byEq[log.equipmentId] = { id: log.equipmentId, name: log.equipmentName || eq?.name || '—', type: eq?.type || '—', siteName: log.siteName || eq?.siteName || '—', hourlyRate: getRate(log), logs: [], totalHours: 0, totalCost: 0 }
@@ -314,9 +330,12 @@ export default function SupplierReportPage() {
                       <thead><tr><th>#</th><th>التاريخ</th><th>الحالة</th><th>الساعات</th><th>سعر/ساعة</th><th>التكلفة</th><th>ملاحظات</th></tr></thead>
                       <tbody>
                         {eq.logs.map((log, i) => (
-                          <tr key={log.id}>
+                          <tr key={log.id} style={{ background: log.isLastWorkingDay ? 'rgba(224,80,80,0.08)' : 'transparent' }}>
                             <td style={{ color: 'var(--text-3)' }}>{i+1}</td>
-                            <td>{log.date}</td>
+                            <td>
+                              {log.date}
+                              {log.isLastWorkingDay && <div style={{ fontSize: '0.68rem', color: 'var(--danger)', fontWeight: 700, marginTop: 2 }}>🔴 آخر يوم عمل</div>}
+                            </td>
                             <td><span className={`badge ${log.status==='working'?'badge-green':log.status==='breakdown'?'badge-red':'badge-gold'}`} style={{ fontSize:'0.72rem' }}>{log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}</span></td>
                             <td>{log.hours > 0 ? `${log.hours} س` : '—'}</td>
                             <td style={{ color: 'var(--text-2)', fontSize: '0.82rem' }}>{log.effectiveRate > 0 ? `${log.effectiveRate} ر` : '—'}</td>
@@ -451,7 +470,10 @@ export function InvoiceBody({ inv, showPrice }) {
               {(eq.logs || []).map((log, i) => (
                 <tr key={i}>
                   <td>{i+1}</td>
-                  <td>{log.date}</td>
+                  <td>
+                    {log.date}
+                    {log.isLastWorkingDay && <div style={{ color: '#e05050', fontWeight: 700, fontSize: 9 }}>🔴 آخر يوم عمل</div>}
+                  </td>
                   <td>{log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}</td>
                   <td>{log.hours > 0 ? log.hours : '—'}</td>
                   {showPrice && <><td>{log.effectiveRate > 0 ? log.effectiveRate : '—'}</td><td style={{ fontWeight: 600 }}>{log.cost > 0 ? log.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 }) : '—'}</td></>}
