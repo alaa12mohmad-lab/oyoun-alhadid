@@ -29,6 +29,7 @@ export default function SupplierReportPage() {
   const [loading, setLoading]       = useState(false)
   const [generated, setGenerated]   = useState(false)
   const [archiving, setArchiving]   = useState(false)
+  const [eqRowsWithTransport, setEqRowsWithTransport] = useState([])
   const [archived, setArchived]     = useState(false)
   const [archivedInvNo, setArchivedInvNo] = useState('')
 
@@ -111,7 +112,7 @@ export default function SupplierReportPage() {
       markedLogs.forEach(log => {
         if (!byEq[log.equipmentId]) {
           const eq = eqMap[log.equipmentId]
-          byEq[log.equipmentId] = { id: log.equipmentId, name: log.equipmentName || eq?.name || '—', type: eq?.type || '—', siteName: log.siteName || eq?.siteName || '—', hourlyRate: getRate(log), logs: [], totalHours: 0, totalCost: 0 }
+          byEq[log.equipmentId] = { id: log.equipmentId, name: log.equipmentName || eq?.name || '—', type: eq?.type || '—', siteName: log.siteName || eq?.siteName || '—', hourlyRate: getRate(log), logs: [], totalHours: 0, totalCost: 0, transport: 0, transportNote: '' }
         }
         byEq[log.equipmentId].logs.push(log)
         if (log.status === 'working') { byEq[log.equipmentId].totalHours += log.hours || 0; byEq[log.equipmentId].totalCost += log.cost }
@@ -121,9 +122,17 @@ export default function SupplierReportPage() {
       const grandHours = eqList.reduce((s,e) => s + e.totalHours, 0)
       const grandCost  = eqList.reduce((s,e) => s + e.totalCost,  0)
       setReportData({ supplier, eqList, grandHours, grandCost })
+      setEqRowsWithTransport(eqList.map(eq => ({ ...eq })))
       setGenerated(true)
     } catch(e) { console.error(e) }
     finally { setLoading(false) }
+  }
+
+  function updateTransport(id, field, value) {
+    setEqRowsWithTransport(rows => rows.map(r => {
+      if (r.id !== id) return r
+      return { ...r, [field]: field === 'transport' ? (parseFloat(value) || 0) : value }
+    }))
   }
 
   function doPrint(mode) {
@@ -134,8 +143,10 @@ export default function SupplierReportPage() {
       supplierContact: reportData.supplier?.contactPerson || '',
       dateFrom: filters.dateFrom, dateTo: filters.dateTo,
       reportType: filters.reportType,
-      eqList: reportData.eqList,
-      grandHours: reportData.grandHours, grandCost: reportData.grandCost,
+      eqList: eqRowsWithTransport.length > 0 ? eqRowsWithTransport : reportData.eqList,
+      grandHours: reportData.grandHours,
+      grandCost: reportData.grandCost,
+      grandTransport: eqRowsWithTransport.reduce((s,r) => s + (r.transport||0), 0),
       approvedBy: userData?.name || userData?.email || 'مدير',
       approvedAt: null,
     }
@@ -159,7 +170,9 @@ export default function SupplierReportPage() {
           hourlyRate: eq.hourlyRate, totalHours: eq.totalHours, totalCost: eq.totalCost,
           logs: eq.logs.map(l => ({ date: l.date, status: l.status, hours: l.hours||0, effectiveRate: l.effectiveRate, cost: l.cost, notes: l.notes||'', stopReason: l.stopReason||'' }))
         })),
-        grandHours: reportData.grandHours, grandCost: reportData.grandCost,
+        grandHours: reportData.grandHours,
+      grandCost: reportData.grandCost,
+      grandTransport: eqRowsWithTransport.reduce((s,r) => s + (r.transport||0), 0),
         approvedBy: userData?.name || userData?.email || 'مدير',
         approvedAt: serverTimestamp(), createdAt: serverTimestamp(),
       })
@@ -295,7 +308,7 @@ export default function SupplierReportPage() {
                   <div style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: 10, color: 'var(--text-2)' }}>📊 ملخص المعدات</div>
                   <div className="table-wrap" style={{ marginBottom: 20 }}>
                     <table>
-                      <thead><tr><th>#</th><th>المعدة</th><th>النوع</th><th>الموقع</th><th>ساعات العمل</th><th>سعر/ساعة</th><th>الإجمالي (ريال)</th></tr></thead>
+                      <thead><tr><th>#</th><th>المعدة</th><th>النوع</th><th>الموقع</th><th>ساعات العمل</th><th>سعر/ساعة</th><th>إجمالي الساعات</th><th>مصاريف نقل</th><th>ملاحظة النقل</th><th>الإجمالي</th></tr></thead>
                       <tbody>
                         {reportData.eqList.map((eq, i) => (
                           <tr key={eq.id}>
@@ -306,6 +319,23 @@ export default function SupplierReportPage() {
                             <td style={{ fontWeight: 600 }}>{eq.totalHours} س</td>
                             <td style={{ color: 'var(--text-2)' }}>{eq.hourlyRate} ر/س</td>
                             <td style={{ color: 'var(--accent)', fontWeight: 700 }}>{eq.totalCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
+                            <td>
+                              <input type="number" className="form-control"
+                                style={{ maxWidth: 100, fontSize: '0.82rem', padding: '5px 8px' }}
+                                placeholder="0"
+                                value={eqRowsWithTransport.find(r => r.id === eq.id)?.transport || ''}
+                                onChange={e => updateTransport(eq.id, 'transport', e.target.value)} />
+                            </td>
+                            <td>
+                              <input className="form-control"
+                                style={{ maxWidth: 130, fontSize: '0.82rem', padding: '5px 8px' }}
+                                placeholder="مثال: من جدة"
+                                value={eqRowsWithTransport.find(r => r.id === eq.id)?.transportNote || ''}
+                                onChange={e => updateTransport(eq.id, 'transportNote', e.target.value)} />
+                            </td>
+                            <td style={{ color: 'var(--info)', fontWeight: 700 }}>
+                              {(eq.totalCost + (eqRowsWithTransport.find(r => r.id === eq.id)?.transport || 0)).toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر
+                            </td>
                           </tr>
                         ))}
                         <tr style={{ background: 'var(--accent-dim2)', fontWeight: 700 }}>
@@ -313,6 +343,11 @@ export default function SupplierReportPage() {
                           <td>{reportData.grandHours} س</td>
                           <td></td>
                           <td style={{ color: 'var(--accent)' }}>{reportData.grandCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
+                          <td style={{ color: 'var(--accent)' }}>{eqRowsWithTransport.reduce((s,r)=>s+(r.transport||0),0).toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</td>
+                          <td></td>
+                          <td style={{ color: 'var(--info)', fontSize: '1.05rem' }}>
+                            {(reportData.grandCost + eqRowsWithTransport.reduce((s,r)=>s+(r.transport||0),0)).toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر
+                          </td>
                         </tr>
                       </tbody>
                     </table>

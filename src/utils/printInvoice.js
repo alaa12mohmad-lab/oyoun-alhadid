@@ -94,6 +94,7 @@ function invoiceBodyHtml(inv, showPrice) {
           </tr>
         </tbody>
       </table>
+    ${eq.transport > 0 ? `<div style="font-size:11px;margin-top:4px;padding:5px 10px;background:#fffbe6;border:1px solid #ffe58f;border-radius:4px">🚛 مصاريف نقل: ${eq.transport.toLocaleString('ar-SA',{maximumFractionDigits:0})} ريال${eq.transportNote ? ' — ' + eq.transportNote : ''}</div>` : ''}
     `
   }).join('')
 
@@ -132,7 +133,7 @@ function invoiceBodyHtml(inv, showPrice) {
       <table class="inv-table">
         <thead><tr>
           <th>#</th><th>المعدة</th><th>النوع</th><th>الموقع</th><th>ساعات العمل</th>
-          ${showPrice ? '<th>سعر/ساعة (ريال)</th><th>الإجمالي (ريال)</th>' : ''}
+          ${showPrice ? '<th>سعر/ساعة (ريال)</th><th>إجمالي الساعات</th><th>مصاريف نقل</th><th>الإجمالي</th>' : ''}
         </tr></thead>
         <tbody>
           ${summaryRows}
@@ -153,7 +154,7 @@ function invoiceBodyHtml(inv, showPrice) {
           <div class="grand-label">إجمالي المستحقات</div>
           <div class="grand-hours">${inv.grandHours} ساعة عمل إجمالية</div>
         </div>
-        <div class="grand-amount">${(inv.grandCost||0).toLocaleString('ar-SA',{maximumFractionDigits:0})} ريال</div>
+        <div class="grand-amount">${((inv.grandCost||0)+(inv.grandTransport||0)).toLocaleString('ar-SA',{maximumFractionDigits:0})} ريال${inv.grandTransport > 0 ? `<div style="font-size:11px;color:#888;margin-top:2px">شامل مصاريف نقل: ${(inv.grandTransport||0).toLocaleString('ar-SA',{maximumFractionDigits:0})} ريال</div>` : ''}</div>
       </div>
     ` : ''}
 
