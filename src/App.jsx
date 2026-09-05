@@ -6,6 +6,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import EquipmentPage from './pages/EquipmentPage'
 import SitesPage from './pages/SitesPage'
 import SuppliersPage from './pages/SuppliersPage'
+import ClientsPage from './pages/ClientsPage'
 import UsersPage from './pages/UsersPage'
 import ReportsPage from './pages/ReportsPage'
 import LogPage from './pages/LogPage'
@@ -16,7 +17,9 @@ import ManagerReportPage from './pages/ManagerReportPage'
 import SupplierReportPage from './pages/SupplierReportPage'
 import InvoiceArchivePage from './pages/InvoiceArchivePage'
 import DebitNotePage from './pages/DebitNotePage'
+import ClientReportPage from './pages/ClientReportPage'
 import DataCleanupPage from './pages/DataCleanupPage'
+
 function LoadingScreen() {
   return (
     <div className="loading-page">
@@ -48,13 +51,15 @@ export default function App() {
         case 'managerreport':   return <ManagerReportPage />
         case 'supplierreport':  return <SupplierReportPage />
         case 'invoicearchive':  return <InvoiceArchivePage />
+        case 'debitnote':       return <DebitNotePage />
+        case 'clientreport':    return <ClientReportPage />
         case 'pdf':             return <PdfReportPage />
         case 'equipment':       return <EquipmentPage />
         case 'sites':           return <SitesPage />
         case 'suppliers':       return <SuppliersPage />
+        case 'clients':         return <ClientsPage />
         case 'users':           return <UsersPage />
-        case 'debitnote': return <DebitNotePage />
-        case 'cleanup': return <DataCleanupPage />
+        case 'cleanup':         return <DataCleanupPage />
         default:                return <AdminDashboard setActivePage={setActivePage} />
       }
     }

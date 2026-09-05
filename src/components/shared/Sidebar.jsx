@@ -2,34 +2,40 @@ import { useAuth } from '../../hooks/useAuth'
 
 const adminNav = [
   { section: 'الرئيسية', items: [
-    { id: 'dashboard',      label: 'لوحة التحكم',        icon: '📊' },
-    { id: 'quickentry',     label: 'إدخال سريع أسبوعي',  icon: '⚡' },
-    { id: 'log',            label: 'تسجيل يومي',          icon: '⏱️' },
+    { id: 'dashboard',      label: 'لوحة التحكم',          icon: '📊' },
+    { id: 'quickentry',     label: 'إدخال سريع أسبوعي',    icon: '⚡' },
+    { id: 'log',            label: 'تسجيل يومي',            icon: '⏱️' },
   ]},
-  { section: 'التقارير', items: [
-    { id: 'reports',        label: 'التقارير الأسبوعية',  icon: '📋' },
-    { id: 'managerreport',  label: 'تقرير المدير',         icon: '📨' },
-    { id: 'supplierreport', label: 'تقرير المورد',         icon: '🏢' },
-    { id: 'invoicearchive', label: 'أرشيف الفواتير',       icon: '🗄️' },
-    { id: 'debitnote', label: 'ديبت نوت المورد', icon: '📋' },
-    { id: 'pdf',            label: 'تقرير PDF مخصص',      icon: '📄' },
+  { section: 'تقارير الموردين', items: [
+    { id: 'supplierreport', label: 'تقرير المورد',           icon: '🏢' },
+    { id: 'invoicearchive', label: 'أرشيف الفواتير',         icon: '🗄️' },
+    { id: 'debitnote',      label: 'ديبت نوت المورد',        icon: '📋' },
+  ]},
+  { section: 'تقارير العملاء', items: [
+    { id: 'clientreport',   label: 'مسودة فاتورة العميل',   icon: '🏭' },
+  ]},
+  { section: 'التقارير العامة', items: [
+    { id: 'reports',        label: 'التقارير الأسبوعية',    icon: '📋' },
+    { id: 'managerreport',  label: 'تقرير المدير',           icon: '📨' },
+    { id: 'pdf',            label: 'تقرير PDF مخصص',        icon: '📄' },
   ]},
   { section: 'الإدارة', items: [
-    { id: 'equipment',      label: 'المعدات',              icon: '🏗️' },
-    { id: 'sites',          label: 'المواقع',              icon: '📍' },
-    { id: 'suppliers',      label: 'الموردون',             icon: '🏢' },
-    { id: 'users',          label: 'المستخدمون',           icon: '👥' },
-    { id: 'cleanup', label: 'تنظيف البيانات', icon: '🧹' },
+    { id: 'equipment',      label: 'المعدات',                icon: '🏗️' },
+    { id: 'sites',          label: 'المواقع',                icon: '📍' },
+    { id: 'suppliers',      label: 'الموردون',               icon: '🏢' },
+    { id: 'clients',        label: 'العملاء',                icon: '🏭' },
+    { id: 'users',          label: 'المستخدمون',             icon: '👥' },
+    { id: 'cleanup',        label: 'تنظيف البيانات',         icon: '🧹' },
   ]},
 ]
 
 const supervisorNav = [
   { section: 'الرئيسية', items: [
-    { id: 'dashboard',  label: 'موقعي',                icon: '📊' },
-    { id: 'quickentry', label: 'إدخال سريع أسبوعي',  icon: '⚡' },
-    { id: 'log',        label: 'تسجيل يومي',          icon: '⏱️' },
-    { id: 'history',    label: 'التقارير الأسبوعية',  icon: '📋' },
-    { id: 'pdf',        label: 'تقرير PDF',            icon: '📄' },
+    { id: 'dashboard',  label: 'موقعي',                  icon: '📊' },
+    { id: 'quickentry', label: 'إدخال سريع أسبوعي',      icon: '⚡' },
+    { id: 'log',        label: 'تسجيل يومي',              icon: '⏱️' },
+    { id: 'history',    label: 'التقارير الأسبوعية',      icon: '📋' },
+    { id: 'pdf',        label: 'تقرير PDF',               icon: '📄' },
   ]},
 ]
 

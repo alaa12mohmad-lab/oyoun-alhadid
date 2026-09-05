@@ -7,12 +7,13 @@ import { db } from '../firebase'
 import { format } from 'date-fns'
 
 const today = format(new Date(), 'yyyy-MM-dd')
-const EMPTY = { name: '', siteId: '', supplierId: '', hourlyRate: '', type: '', startDate: '', notes: '' }
+const EMPTY = { name: '', siteId: '', supplierId: '', hourlyRate: '', type: '', startDate: '', notes: '', clientId: '', clientRate: '' }
 
 export default function EquipmentPage() {
   const [items, setItems]           = useState([])
   const [sites, setSites]           = useState([])
   const [suppliers, setSuppliers]   = useState([])
+  const [clients, setClients]       = useState([])
   const [loading, setLoading]       = useState(true)
   const [modal, setModal]           = useState(false)
   const [form, setForm]             = useState(EMPTY)
@@ -38,10 +39,11 @@ export default function EquipmentPage() {
   useEffect(() => { loadAll() }, [])
 
   async function loadAll() {
-    const [eqSnap, siteSnap, supSnap] = await Promise.all([
+    const [eqSnap, siteSnap, supSnap, cliSnap] = await Promise.all([
       getDocs(collection(db, 'equipment')),
       getDocs(collection(db, 'sites')),
       getDocs(collection(db, 'suppliers')),
+      getDocs(collection(db, 'clients')),
     ])
     const siteList = siteSnap.docs.map(d => ({ id: d.id, ...d.data() }))
     const supList  = supSnap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -55,6 +57,7 @@ export default function EquipmentPage() {
     })))
     setSites(siteList)
     setSuppliers(supList)
+    setClients(cliSnap.docs.map(d => ({ id: d.id, ...d.data() })))
     setLoading(false)
   }
 
@@ -140,6 +143,7 @@ export default function EquipmentPage() {
       name: item.name, siteId: item.siteId, supplierId: item.supplierId,
       hourlyRate: item.hourlyRate, type: item.type || '',
       startDate: item.startDate || '', notes: item.notes || '',
+      clientId: item.clientId || '', clientRate: item.clientRate || '',
     })
     setEditId(item.id); setModal(true)
   }
@@ -149,9 +153,12 @@ export default function EquipmentPage() {
     setSaving(true)
     const site     = sites.find(s => s.id === form.siteId)
     const supplier = suppliers.find(s => s.id === form.supplierId)
+    const client   = clients.find(c => c.id === form.clientId)
     const data = {
       ...form, hourlyRate: parseFloat(form.hourlyRate),
+      clientRate: parseFloat(form.clientRate) || 0,
       siteName: site?.name || '', supplierName: supplier?.name || '',
+      clientName: client?.name || '',
       updatedAt: serverTimestamp(),
     }
     if (editId) {
@@ -388,6 +395,23 @@ export default function EquipmentPage() {
               <div className="form-group">
                 <label className="form-label">ملاحظات</label>
                 <input className="form-control" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+              </div>
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-3)', marginBottom: 10 }}>🏭 بيانات العميل (اختياري)</div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">العميل</label>
+                  <select className="form-control" value={form.clientId} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}>
+                    <option value="">بدون عميل</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">سعر ساعة العميل (ريال)</label>
+                  <input type="number" className="form-control" value={form.clientRate}
+                    onChange={e => setForm(f => ({ ...f, clientRate: e.target.value }))} placeholder="0" />
+                  {editId && <div className="info-text">💡 لتغيير السعر بتواريخ سريان راجع سجل أسعار العميل</div>}
+                </div>
               </div>
             </div>
             <div className="modal-footer">
