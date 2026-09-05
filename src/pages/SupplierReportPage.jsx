@@ -140,19 +140,30 @@ export default function SupplierReportPage() {
 
   function doPrint(mode) {
     if (!reportData) return
+    // Read transport values directly from DOM inputs
+    const domTransport = {}
+    document.querySelectorAll('[data-field="transport"]').forEach(el => {
+      domTransport[el.dataset.eqid] = parseFloat(el.value) || 0
+    })
+    const domTransportNote = {}
+    document.querySelectorAll('[data-field="transportNote"]').forEach(el => {
+      domTransportNote[el.dataset.eqid] = el.value || ''
+    })
+    const grandTransport = Object.values(domTransport).reduce((s,v) => s + v, 0)
     const inv = {
       invoiceNo:       makeInvoiceNo(reportData.supplier?.name, filters.dateFrom),
       supplierName:    reportData.supplier?.name || '—',
       supplierContact: reportData.supplier?.contactPerson || '',
       dateFrom: filters.dateFrom, dateTo: filters.dateTo,
       reportType: filters.reportType,
-      eqList: reportData.eqList.map(eq => {
-        const tr = transportRef.current[eq.id] || {}
-        return { ...eq, transport: tr.transport || 0, transportNote: tr.transportNote || '' }
-      }),
+      eqList: reportData.eqList.map(eq => ({
+        ...eq,
+        transport:     domTransport[eq.id] || 0,
+        transportNote: domTransportNote[eq.id] || '',
+      })),
       grandHours: reportData.grandHours,
       grandCost: reportData.grandCost,
-      grandTransport: Object.values(transportRef.current).reduce((s,r) => s + (r.transport||0), 0),
+      grandTransport,
       approvedBy: userData?.name || userData?.email || 'مدير',
       approvedAt: null,
     }
