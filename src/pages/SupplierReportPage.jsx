@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { collection, getDocs, addDoc, query, where, orderBy, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek } from 'date-fns'
@@ -30,6 +30,7 @@ export default function SupplierReportPage() {
   const [generated, setGenerated]   = useState(false)
   const [archiving, setArchiving]   = useState(false)
   const [eqRowsWithTransport, setEqRowsWithTransport] = useState([])
+  const transportRef = React.useRef({}) // {eqId: {transport, transportNote}}
   const [archived, setArchived]     = useState(false)
   const [archivedInvNo, setArchivedInvNo] = useState('')
 
@@ -39,7 +40,7 @@ export default function SupplierReportPage() {
     if (filters.supplierId) setSupplierEquipment(allEquipment.filter(e => e.supplierId === filters.supplierId))
     else setSupplierEquipment([])
     setFilters(f => ({ ...f, equipmentId: '' }))
-    setGenerated(false); setReportData(null); setArchived(false)
+    setGenerated(false); setReportData(null); setArchived(false); transportRef.current = {}
   }, [filters.supplierId, allEquipment])
 
   async function loadMeta() {
@@ -129,9 +130,11 @@ export default function SupplierReportPage() {
   }
 
   function updateTransport(id, field, value) {
+    const parsed = field === 'transport' ? (parseFloat(value) || 0) : value
+    transportRef.current[id] = { ...(transportRef.current[id] || {}), [field]: parsed }
     setEqRowsWithTransport(rows => rows.map(r => {
       if (r.id !== id) return r
-      return { ...r, [field]: field === 'transport' ? (parseFloat(value) || 0) : value }
+      return { ...r, [field]: parsed }
     }))
   }
 
@@ -144,12 +147,12 @@ export default function SupplierReportPage() {
       dateFrom: filters.dateFrom, dateTo: filters.dateTo,
       reportType: filters.reportType,
       eqList: reportData.eqList.map(eq => {
-        const tr = eqRowsWithTransport.find(r => r.id === eq.id)
-        return { ...eq, transport: tr?.transport || 0, transportNote: tr?.transportNote || '' }
+        const tr = transportRef.current[eq.id] || {}
+        return { ...eq, transport: tr.transport || 0, transportNote: tr.transportNote || '' }
       }),
       grandHours: reportData.grandHours,
       grandCost: reportData.grandCost,
-      grandTransport: eqRowsWithTransport.reduce((s,r) => s + (r.transport||0), 0),
+      grandTransport: Object.values(transportRef.current).reduce((s,r) => s + (r.transport||0), 0),
       approvedBy: userData?.name || userData?.email || 'مدير',
       approvedAt: null,
     }
