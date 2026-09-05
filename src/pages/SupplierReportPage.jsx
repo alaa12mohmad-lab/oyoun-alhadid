@@ -143,7 +143,10 @@ export default function SupplierReportPage() {
       supplierContact: reportData.supplier?.contactPerson || '',
       dateFrom: filters.dateFrom, dateTo: filters.dateTo,
       reportType: filters.reportType,
-      eqList: eqRowsWithTransport.length > 0 ? eqRowsWithTransport : reportData.eqList,
+      eqList: reportData.eqList.map(eq => {
+        const tr = eqRowsWithTransport.find(r => r.id === eq.id)
+        return { ...eq, transport: tr?.transport || 0, transportNote: tr?.transportNote || '' }
+      }),
       grandHours: reportData.grandHours,
       grandCost: reportData.grandCost,
       grandTransport: eqRowsWithTransport.reduce((s,r) => s + (r.transport||0), 0),
@@ -165,11 +168,15 @@ export default function SupplierReportPage() {
         supplierContact: reportData.supplier?.contactPerson || '',
         dateFrom: filters.dateFrom, dateTo: filters.dateTo,
         reportType: filters.reportType,
-        eqList: reportData.eqList.map(eq => ({
+        eqList: reportData.eqList.map(eq => {
+          const tr = eqRowsWithTransport.find(r => r.id === eq.id)
+          return ({
           id: eq.id, name: eq.name, type: eq.type, siteName: eq.siteName,
           hourlyRate: eq.hourlyRate, totalHours: eq.totalHours, totalCost: eq.totalCost,
+          transport: tr?.transport || 0, transportNote: tr?.transportNote || '',
           logs: eq.logs.map(l => ({ date: l.date, status: l.status, hours: l.hours||0, effectiveRate: l.effectiveRate, cost: l.cost, notes: l.notes||'', stopReason: l.stopReason||'' }))
-        })),
+        })
+        }),
         grandHours: reportData.grandHours,
       grandCost: reportData.grandCost,
       grandTransport: eqRowsWithTransport.reduce((s,r) => s + (r.transport||0), 0),
