@@ -150,6 +150,7 @@ export default function SupplierReportPage() {
       domTransportNote[el.dataset.eqid] = el.value || ''
     })
     const grandTransport = Object.values(domTransport).reduce((s,v) => s + v, 0)
+    console.log('🚛 domTransport:', domTransport, 'grand:', grandTransport)
     const inv = {
       invoiceNo:       makeInvoiceNo(reportData.supplier?.name, filters.dateFrom),
       supplierName:    reportData.supplier?.name || '—',
