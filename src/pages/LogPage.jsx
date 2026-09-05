@@ -5,31 +5,31 @@ import { useAuth } from '../hooks/useAuth'
 import { format } from 'date-fns'
 
 const STATUS_OPTIONS = [
-  { value: 'working', label: 'شغالة', color: 'badge-green' },
-  { value: 'breakdown', label: 'عطل', color: 'badge-red' },
-  { value: 'maintenance', label: 'صيانة', color: 'badge-gold' },
-  { value: 'idle', label: 'متوقفة / راحة', color: 'badge-gray' },
+  { value: 'working',     label: 'شغالة',         color: 'badge-green' },
+  { value: 'breakdown',   label: 'عطل',            color: 'badge-red'   },
+  { value: 'maintenance', label: 'صيانة',          color: 'badge-gold'  },
+  { value: 'idle',        label: 'متوقفة / راحة',  color: 'badge-gray'  },
 ]
 
 export default function LogPage() {
   const { userData } = useAuth()
   const isAdmin = userData?.role === 'admin'
-
   const [equipment, setEquipment] = useState([])
-  const [sites, setSites] = useState([])
-  const [logs, setLogs] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [sites, setSites]         = useState([])
+  const [logs, setLogs]           = useState([])
+  const [loading, setLoading]     = useState(true)
   const [filterSite, setFilterSite] = useState(isAdmin ? '' : userData?.siteId)
   const [form, setForm] = useState({
     equipmentId: '',
     hours: '',
+    clientHours: '',
     date: format(new Date(), 'yyyy-MM-dd'),
     status: 'working',
     stopReason: '',
     notes: '',
     siteId: isAdmin ? '' : userData?.siteId,
   })
-  const [saving, setSaving] = useState(false)
+  const [saving, setSaving]   = useState(false)
   const [success, setSuccess] = useState(false)
 
   useEffect(() => { loadData() }, [filterSite])
@@ -48,27 +48,28 @@ export default function LogPage() {
             ? getDocs(query(collection(db, 'logs'), orderBy('date', 'desc')))
             : getDocs(query(collection(db, 'logs'), where('siteId', '==', userData?.siteId), orderBy('date', 'desc'))),
       ])
-
       const siteList = siteSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      const eqList = eqSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      const eqMap = {}
+      const eqList   = eqSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const eqMap    = {}
       eqList.forEach(e => eqMap[e.id] = e)
-
       setSites(siteList)
       setEquipment(eqList)
       setLogs(logsSnap.docs.map(d => {
         const log = { id: d.id, ...d.data() }
-        const eq = eqMap[log.equipmentId]
+        const eq  = eqMap[log.equipmentId]
         return { ...log, cost: (log.hours || 0) * (eq?.hourlyRate || log.hourlyRate || 0) }
       }))
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
 
-  // Filter equipment by selected site (admin)
   const filteredEquipment = isAdmin && form.siteId
     ? equipment.filter(e => e.siteId === form.siteId)
     : equipment
+
+  // Selected equipment — to check if has clientId
+  const selectedEq = equipment.find(e => e.id === form.equipmentId)
+  const hasClient  = !!selectedEq?.clientId
 
   async function submit() {
     if (!form.equipmentId || !form.date) return alert('يرجى اختيار المعدة والتاريخ')
@@ -76,30 +77,39 @@ export default function LogPage() {
     if (form.status !== 'working' && !form.stopReason) return alert('يرجى إدخال سبب التوقف')
 
     setSaving(true)
-    const eq = equipment.find(e => e.id === form.equipmentId)
+    const eq     = equipment.find(e => e.id === form.equipmentId)
     const siteId = isAdmin ? (form.siteId || eq?.siteId) : userData?.siteId
-    const site = sites.find(s => s.id === siteId)
-    const hours = form.status === 'working' ? parseFloat(form.hours) : 0
+    const site   = sites.find(s => s.id === siteId)
+    const hours  = form.status === 'working' ? parseFloat(form.hours) : 0
+
+    // clientHours: only if equipment has clientId and status is working
+    const clientHours = (hasClient && form.status === 'working' && form.clientHours !== '')
+      ? parseFloat(form.clientHours) || 0
+      : 0
 
     await addDoc(collection(db, 'logs'), {
-      equipmentId: form.equipmentId,
+      equipmentId:   form.equipmentId,
       equipmentName: eq?.name || '',
       siteId,
-      siteName: site?.name || eq?.siteName || '',
-      supplierId: eq?.supplierId || '',
-      supplierName: eq?.supplierName || '',
-      hourlyRate: eq?.hourlyRate || 0,
+      siteName:      site?.name || eq?.siteName || '',
+      supplierId:    eq?.supplierId || '',
+      supplierName:  eq?.supplierName || '',
+      clientId:      eq?.clientId || '',
+      clientName:    eq?.clientName || '',
+      hourlyRate:    eq?.hourlyRate || 0,
+      clientRate:    eq?.clientRate || 0,
       hours,
-      status: form.status,
-      stopReason: form.status !== 'working' ? form.stopReason : '',
-      date: form.date,
-      notes: form.notes,
-      supervisorId: userData.uid,
+      clientHours,
+      status:        form.status,
+      stopReason:    form.status !== 'working' ? form.stopReason : '',
+      date:          form.date,
+      notes:         form.notes,
+      supervisorId:  userData.uid,
       supervisorName: userData.name || userData.email,
-      createdAt: serverTimestamp(),
+      createdAt:     serverTimestamp(),
     })
 
-    setForm(f => ({ ...f, equipmentId: '', hours: '', notes: '', stopReason: '', status: 'working' }))
+    setForm(f => ({ ...f, equipmentId: '', hours: '', clientHours: '', notes: '', stopReason: '', status: 'working' }))
     setSaving(false)
     setSuccess(true)
     setTimeout(() => setSuccess(false), 3000)
@@ -129,12 +139,11 @@ export default function LogPage() {
         {success && <div className="alert alert-success">✅ تم التسجيل بنجاح</div>}
 
         <div className="form-row-3">
-          {/* Admin: site selector */}
           {isAdmin && (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">الموقع</label>
               <select className="form-control" value={form.siteId}
-                onChange={e => setForm(f => ({ ...f, siteId: e.target.value, equipmentId: '' }))}>
+                onChange={e => setForm(f => ({ ...f, siteId: e.target.value, equipmentId: '', clientHours: '' }))}>
                 <option value="">كل المواقع</option>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -143,9 +152,13 @@ export default function LogPage() {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">المعدة *</label>
             <select className="form-control" value={form.equipmentId}
-              onChange={e => setForm(f => ({ ...f, equipmentId: e.target.value }))}>
+              onChange={e => setForm(f => ({ ...f, equipmentId: e.target.value, clientHours: '' }))}>
               <option value="">اختر المعدة</option>
-              {filteredEquipment.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              {filteredEquipment.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.name}{e.clientId ? ' 🏭' : ''}
+                </option>
+              ))}
             </select>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -178,12 +191,29 @@ export default function LogPage() {
 
         <div className="form-row" style={{ marginTop: 12 }}>
           {form.status === 'working' ? (
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">عدد ساعات العمل *</label>
-              <input type="number" className="form-control" value={form.hours}
-                onChange={e => setForm(f => ({ ...f, hours: e.target.value }))}
-                placeholder="0" min="0.5" max="24" step="0.5" />
-            </div>
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">ساعات المورد *</label>
+                <input type="number" className="form-control" value={form.hours}
+                  onChange={e => setForm(f => ({ ...f, hours: e.target.value }))}
+                  placeholder="0" min="0.5" max="24" step="0.5" />
+                <div className="info-text">الساعات التي يحتسبها المورد</div>
+              </div>
+              {hasClient && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">
+                    ساعات العميل
+                    <span style={{ fontSize: '0.72rem', color: 'var(--info)', marginRight: 6 }}>
+                      ({selectedEq?.clientName || 'العميل'})
+                    </span>
+                  </label>
+                  <input type="number" className="form-control" value={form.clientHours}
+                    onChange={e => setForm(f => ({ ...f, clientHours: e.target.value }))}
+                    placeholder="0" min="0" max="24" step="0.5" />
+                  <div className="info-text">الساعات التي يُحتسب بها على العميل</div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">سبب التوقف *</label>
@@ -207,7 +237,7 @@ export default function LogPage() {
         </div>
       </div>
 
-      {/* Filter (admin) */}
+      {/* Filter */}
       {isAdmin && (
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
           <label className="form-label" style={{ marginBottom: 0 }}>فلتر السجلات:</label>
@@ -236,7 +266,8 @@ export default function LogPage() {
                   <th>المعدة</th>
                   {isAdmin && <th>الموقع</th>}
                   <th>الحالة</th>
-                  <th>الساعات</th>
+                  <th>س المورد</th>
+                  <th>س العميل</th>
                   <th>التكلفة</th>
                   <th>ملاحظات</th>
                   <th>المسجّل</th>
@@ -249,13 +280,19 @@ export default function LogPage() {
                   return (
                     <tr key={log.id}>
                       <td>{log.date}</td>
-                      <td style={{ fontWeight: 500 }}>{log.equipmentName}</td>
+                      <td style={{ fontWeight: 500 }}>
+                        {log.equipmentName}
+                        {log.clientId && <span style={{ fontSize: '0.7rem', color: 'var(--info)', marginRight: 4 }}>🏭</span>}
+                      </td>
                       {isAdmin && <td><span className="badge badge-blue">{log.siteName || '—'}</span></td>}
                       <td>
                         <span className={`badge ${st.color}`}>{st.label}</span>
                         {log.stopReason && <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: 2 }}>{log.stopReason}</div>}
                       </td>
                       <td>{log.hours > 0 ? `${log.hours} س` : '—'}</td>
+                      <td style={{ color: log.clientHours > 0 ? 'var(--info)' : 'var(--text-3)' }}>
+                        {log.clientHours > 0 ? `${log.clientHours} س` : log.clientId ? '0' : '—'}
+                      </td>
                       <td style={{ color: log.cost > 0 ? 'var(--accent)' : 'var(--text-3)', fontWeight: 600 }}>
                         {log.cost > 0 ? `${log.cost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر` : '—'}
                       </td>

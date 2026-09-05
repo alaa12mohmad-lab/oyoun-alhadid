@@ -2,15 +2,14 @@ import { useEffect, useState } from 'react'
 import { collection, getDocs, query, where, orderBy, doc, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../hooks/useAuth'
-import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, eachDayOfInterval, addDays, parseISO, isAfter, isBefore, isEqual } from 'date-fns'
+import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, eachDayOfInterval, addDays, parseISO, isAfter, isBefore } from 'date-fns'
 
 const DAY_NAMES = ['سبت', 'أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة']
-
 const STATUS_OPTS = [
-  { value: 'working',     label: 'شغالة',       color: '#3eb87a', bg: 'rgba(62,184,122,0.12)' },
-  { value: 'breakdown',   label: 'عطل',          color: '#e05050', bg: 'rgba(224,80,80,0.12)'  },
-  { value: 'maintenance', label: 'صيانة',        color: '#e8a020', bg: 'rgba(232,160,32,0.15)' },
-  { value: 'idle',        label: 'راحة',         color: '#6b6860', bg: 'rgba(107,104,96,0.12)' },
+  { value: 'working',     label: 'شغالة', color: '#3eb87a', bg: 'rgba(62,184,122,0.12)'  },
+  { value: 'breakdown',   label: 'عطل',   color: '#e05050', bg: 'rgba(224,80,80,0.12)'   },
+  { value: 'maintenance', label: 'صيانة', color: '#e8a020', bg: 'rgba(232,160,32,0.15)'  },
+  { value: 'idle',        label: 'راحة',  color: '#6b6860', bg: 'rgba(107,104,96,0.12)'  },
 ]
 
 function getWeekDays(weekDate) {
@@ -18,41 +17,31 @@ function getWeekDays(weekDate) {
   return eachDayOfInterval({ start, end: addDays(start, 6) })
 }
 
-// Check if equipment is active on a given date
 function isEquipmentActiveOnDate(eq, dateStr) {
   const date = parseISO(dateStr)
-  // Must have started by this date
-  if (eq.startDate) {
-    const start = parseISO(eq.startDate)
-    if (isBefore(date, start)) return false
-  }
-  // Must not be retired before this date
-  if (eq.status === 'retired' && eq.retiredDate) {
-    const retired = parseISO(eq.retiredDate)
-    if (isAfter(date, retired)) return false
-  }
+  if (eq.startDate && isBefore(date, parseISO(eq.startDate))) return false
+  if (eq.status === 'retired' && eq.retiredDate && isAfter(date, parseISO(eq.retiredDate))) return false
   return true
 }
 
 export default function QuickEntryPage() {
   const { userData } = useAuth()
   const isAdmin = userData?.role === 'admin'
-
-  const [weekDate, setWeekDate] = useState(new Date())
-  const [sites, setSites] = useState([])
+  const [weekDate, setWeekDate]       = useState(new Date())
+  const [sites, setSites]             = useState([])
   const [allEquipment, setAllEquipment] = useState([])
   const [selectedSite, setSelectedSite] = useState(isAdmin ? '' : userData?.siteId)
   const [defaultHours, setDefaultHours] = useState(10)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [savedCount, setSavedCount] = useState(0)
+  const [loading, setLoading]         = useState(true)
+  const [saving, setSaving]           = useState(false)
+  const [savedCount, setSavedCount]   = useState(0)
   const [showSuccess, setShowSuccess] = useState(false)
-  const [grid, setGrid] = useState({})
-  const [activeCell, setActiveCell] = useState(null)
+  const [grid, setGrid]               = useState({})
+  const [activeCell, setActiveCell]   = useState(null)
 
-  const days = getWeekDays(weekDate)
+  const days      = getWeekDays(weekDate)
   const weekStart = format(days[0], 'yyyy-MM-dd')
-  const weekEnd = format(days[6], 'yyyy-MM-dd')
+  const weekEnd   = format(days[6], 'yyyy-MM-dd')
 
   useEffect(() => { loadMeta() }, [])
   useEffect(() => { if (allEquipment.length > 0) loadWeekData() }, [weekDate, selectedSite, allEquipment])
@@ -63,7 +52,6 @@ export default function QuickEntryPage() {
       getDocs(collection(db, 'equipment')),
     ])
     setSites(siteSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-    // Only active equipment OR retired after week start
     setAllEquipment(eqSnap.docs.map(d => ({ id: d.id, ...d.data() })))
     setLoading(false)
   }
@@ -78,6 +66,7 @@ export default function QuickEntryPage() {
       where('date', '<=', weekEnd),
       orderBy('date', 'asc')
     ))
+
     const existingLogs = {}
     logsSnap.docs.forEach(d => {
       const log = { id: d.id, ...d.data() }
@@ -89,16 +78,17 @@ export default function QuickEntryPage() {
     equipment.forEach(eq => {
       newGrid[eq.id] = {}
       days.forEach(day => {
-        const dateStr = format(day, 'yyyy-MM-dd')
-        const active = isEquipmentActiveOnDate(eq, dateStr)
+        const dateStr  = format(day, 'yyyy-MM-dd')
+        const active   = isEquipmentActiveOnDate(eq, dateStr)
         const existing = existingLogs[eq.id]?.[dateStr]
         newGrid[eq.id][dateStr] = {
           active,
-          status: existing?.status || 'working',
-          hours: existing?.hours ?? (active ? defaultHours : 0),
-          stopReason: existing?.stopReason || '',
-          existingId: existing?.id || null,
-          saved: !!existing,
+          status:      existing?.status || 'working',
+          hours:       existing?.hours ?? (active ? defaultHours : 0),
+          clientHours: existing?.clientHours ?? 0,
+          stopReason:  existing?.stopReason || '',
+          existingId:  existing?.id || null,
+          saved:       !!existing,
         }
       })
     })
@@ -106,13 +96,11 @@ export default function QuickEntryPage() {
   }
 
   function getFilteredEquipment() {
-    // Filter by site
     let list = allEquipment.filter(e => {
       if (selectedSite && e.siteId !== selectedSite) return false
       if (!isAdmin && e.siteId !== userData?.siteId) return false
       return true
     })
-    // Only show equipment active during this week (started before week end, not retired before week start)
     list = list.filter(eq => {
       if (eq.startDate && eq.startDate > weekEnd) return false
       if (eq.status === 'retired' && eq.retiredDate && eq.retiredDate < weekStart) return false
@@ -156,30 +144,39 @@ export default function QuickEntryPage() {
     for (const eq of equipment) {
       for (const day of days) {
         const dateStr = format(day, 'yyyy-MM-dd')
-        const cell = grid[eq.id]?.[dateStr]
+        const cell    = grid[eq.id]?.[dateStr]
         if (!cell || cell.saved || !cell.active) continue
 
         const eqData = eqMap[eq.id]
         const siteId = eqData?.siteId || ''
-        const site = siteMap[siteId]
-        const hours = cell.status === 'working' ? (parseFloat(cell.hours) || 0) : 0
+        const site   = siteMap[siteId]
+        const hours  = cell.status === 'working' ? (parseFloat(cell.hours) || 0) : 0
+
+        // clientHours only for equipment with clientId and status working
+        const clientHours = (eqData?.clientId && cell.status === 'working')
+          ? (parseFloat(cell.clientHours) || 0)
+          : 0
 
         const logData = {
-          equipmentId: eq.id,
+          equipmentId:   eq.id,
           equipmentName: eqData?.name || '',
           siteId,
-          siteName: site?.name || eqData?.siteName || '',
-          supplierId: eqData?.supplierId || '',
-          supplierName: eqData?.supplierName || '',
-          hourlyRate: eqData?.hourlyRate || 0,
+          siteName:      site?.name || eqData?.siteName || '',
+          supplierId:    eqData?.supplierId || '',
+          supplierName:  eqData?.supplierName || '',
+          clientId:      eqData?.clientId || '',
+          clientName:    eqData?.clientName || '',
+          hourlyRate:    eqData?.hourlyRate || 0,
+          clientRate:    eqData?.clientRate || 0,
           hours,
-          status: cell.status,
-          stopReason: cell.status !== 'working' ? (cell.stopReason || '') : '',
-          date: dateStr,
-          notes: '',
-          supervisorId: userData.uid,
+          clientHours,
+          status:        cell.status,
+          stopReason:    cell.status !== 'working' ? (cell.stopReason || '') : '',
+          date:          dateStr,
+          notes:         '',
+          supervisorId:  userData.uid,
           supervisorName: userData.name || userData.email,
-          updatedAt: serverTimestamp(),
+          updatedAt:     serverTimestamp(),
         }
 
         if (cell.existingId) {
@@ -200,12 +197,10 @@ export default function QuickEntryPage() {
   }
 
   const equipment = getFilteredEquipment()
-
   let unsavedCount = 0
   equipment.forEach(eq => {
     days.forEach(day => {
-      const dateStr = format(day, 'yyyy-MM-dd')
-      const cell = grid[eq.id]?.[dateStr]
+      const cell = grid[eq.id]?.[format(day, 'yyyy-MM-dd')]
       if (cell && !cell.saved && cell.active) unsavedCount++
     })
   })
@@ -236,7 +231,6 @@ export default function QuickEntryPage() {
           <button className="btn btn-secondary btn-sm" onClick={() => setWeekDate(d => addWeeks(d, 1))}>←</button>
           <button className="btn btn-secondary btn-sm" onClick={() => setWeekDate(new Date())}>الحالي</button>
         </div>
-
         {isAdmin && (
           <select className="form-control" style={{ minWidth: 160 }} value={selectedSite}
             onChange={e => setSelectedSite(e.target.value)}>
@@ -244,7 +238,6 @@ export default function QuickEntryPage() {
             {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
-
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>ساعات افتراضية:</label>
           <input type="number" className="form-control" style={{ width: 80 }}
@@ -262,7 +255,7 @@ export default function QuickEntryPage() {
           </div>
         ))}
         <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', borderRight: '1px solid var(--border)', paddingRight: 12 }}>
-          🔒 الخلايا الرمادية = المعدة لم تبدأ بعد أو انتهت
+          🏭 = عندها عميل (ساعتين منفصلتين) | 🔒 = غير نشطة
         </div>
       </div>
 
@@ -289,6 +282,7 @@ export default function QuickEntryPage() {
             </thead>
             <tbody>
               {equipment.map(eq => {
+                const hasClient = !!eq.clientId
                 const weekTotal = days.reduce((s, day) => {
                   const cell = grid[eq.id]?.[format(day, 'yyyy-MM-dd')]
                   return s + (cell?.active && cell?.status === 'working' ? (parseFloat(cell?.hours) || 0) : 0)
@@ -298,14 +292,13 @@ export default function QuickEntryPage() {
                 return (
                   <tr key={eq.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: '0.85rem', position: 'sticky', right: 0, background: 'var(--steel-2)', zIndex: 1, borderLeft: '1px solid var(--border)' }}>
-                      <div>{eq.name}</div>
+                      <div>{eq.name} {hasClient && '🏭'}</div>
                       {isAdmin && <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 400 }}>{eq.siteName}</div>}
-                      {eq.startDate && <div style={{ fontSize: '0.68rem', color: 'var(--info)' }}>من {eq.startDate}</div>}
+                      {hasClient && <div style={{ fontSize: '0.65rem', color: 'var(--info)' }}>{eq.clientName}</div>}
                     </td>
-
                     {days.map((day, i) => {
                       const dateStr = format(day, 'yyyy-MM-dd')
-                      const cell = grid[eq.id]?.[dateStr]
+                      const cell    = grid[eq.id]?.[dateStr]
                       const isActive = activeCell?.eqId === eq.id && activeCell?.dateStr === dateStr
 
                       if (!cell || !cell.active) {
@@ -319,30 +312,46 @@ export default function QuickEntryPage() {
                       }
 
                       const st = STATUS_OPTS.find(s => s.value === cell.status) || STATUS_OPTS[0]
+
                       return (
                         <td key={i} style={{ padding: 4, verticalAlign: 'top', position: 'relative', minWidth: 88 }}>
                           <div onClick={() => setActiveCell(isActive ? null : { eqId: eq.id, dateStr })}
                             style={{
-                              borderRadius: 6, padding: '6px 8px', cursor: 'pointer',
+                              borderRadius: 6, padding: '4px 6px', cursor: 'pointer',
                               background: cell.saved ? 'rgba(62,184,122,0.06)' : st.bg,
                               border: `1px solid ${isActive ? 'var(--accent)' : cell.saved ? 'rgba(62,184,122,0.25)' : 'var(--border)'}`,
-                              transition: 'all 0.15s', minHeight: 52,
+                              transition: 'all 0.15s', minHeight: hasClient ? 68 : 52,
                             }}>
                             {cell.status === 'working' ? (
-                              <input type="number" value={cell.hours} min={0} max={24} step={0.5}
-                                onClick={e => e.stopPropagation()}
-                                onChange={e => updateCell(eq.id, dateStr, 'hours', parseFloat(e.target.value) || 0)}
-                                style={{ width: '100%', background: 'transparent', border: 'none', color: st.color, fontWeight: 700, fontSize: '1rem', fontFamily: 'var(--font)', textAlign: 'center', outline: 'none' }} />
+                              <>
+                                {/* Supplier hours */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: '0.6rem', color: 'var(--text-3)', minWidth: 16 }}>م</span>
+                                  <input type="number" value={cell.hours} min={0} max={24} step={0.5}
+                                    onClick={e => e.stopPropagation()}
+                                    onChange={e => updateCell(eq.id, dateStr, 'hours', parseFloat(e.target.value) || 0)}
+                                    style={{ width: '100%', background: 'transparent', border: 'none', color: st.color, fontWeight: 700, fontSize: '0.95rem', fontFamily: 'var(--font)', textAlign: 'center', outline: 'none' }} />
+                                </div>
+                                {/* Client hours — only if has client */}
+                                {hasClient && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, borderTop: '1px dashed rgba(26,111,160,0.3)', marginTop: 3, paddingTop: 3 }}>
+                                    <span style={{ fontSize: '0.6rem', color: 'var(--info)', minWidth: 16 }}>ع</span>
+                                    <input type="number" value={cell.clientHours} min={0} max={24} step={0.5}
+                                      onClick={e => e.stopPropagation()}
+                                      onChange={e => updateCell(eq.id, dateStr, 'clientHours', parseFloat(e.target.value) || 0)}
+                                      style={{ width: '100%', background: 'transparent', border: 'none', color: 'var(--info)', fontWeight: 700, fontSize: '0.85rem', fontFamily: 'var(--font)', textAlign: 'center', outline: 'none' }} />
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '0.6rem', color: 'var(--text-3)', textAlign: 'center' }}>س</div>
+                              </>
                             ) : (
                               <div style={{ color: st.color, fontWeight: 600, fontSize: '0.75rem', textAlign: 'center', paddingTop: 6 }}>{st.label}</div>
                             )}
-                            <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', textAlign: 'center' }}>
-                              {cell.status === 'working' ? 'س' : cell.stopReason?.substring(0, 10) || '—'}
-                            </div>
                           </div>
 
+                          {/* Popup */}
                           {isActive && (
-                            <div style={{ position: 'absolute', zIndex: 200, background: 'var(--steel-2)', border: '1px solid var(--accent)', borderRadius: 10, padding: 14, width: 200, boxShadow: 'var(--shadow)', top: 60, right: 0 }}>
+                            <div style={{ position: 'absolute', zIndex: 200, background: 'var(--steel-2)', border: '1px solid var(--accent)', borderRadius: 10, padding: 14, width: 220, boxShadow: 'var(--shadow)', top: 60, right: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: '0.82rem', marginBottom: 10 }}>{eq.name} — {format(day, 'dd/MM')}</div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
                                 {STATUS_OPTS.map(s => (
@@ -353,11 +362,20 @@ export default function QuickEntryPage() {
                                 ))}
                               </div>
                               {cell.status === 'working' ? (
-                                <div>
-                                  <label style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>الساعات</label>
-                                  <input type="number" className="form-control" value={cell.hours} min={0} max={24} step={0.5}
-                                    onChange={e => updateCell(eq.id, dateStr, 'hours', parseFloat(e.target.value) || 0)} />
-                                </div>
+                                <>
+                                  <div style={{ marginBottom: 8 }}>
+                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>ساعات المورد</label>
+                                    <input type="number" className="form-control" value={cell.hours} min={0} max={24} step={0.5}
+                                      onChange={e => updateCell(eq.id, dateStr, 'hours', parseFloat(e.target.value) || 0)} />
+                                  </div>
+                                  {hasClient && (
+                                    <div style={{ marginBottom: 8 }}>
+                                      <label style={{ fontSize: '0.75rem', color: 'var(--info)' }}>ساعات العميل ({eq.clientName})</label>
+                                      <input type="number" className="form-control" value={cell.clientHours} min={0} max={24} step={0.5}
+                                        onChange={e => updateCell(eq.id, dateStr, 'clientHours', parseFloat(e.target.value) || 0)} />
+                                    </div>
+                                  )}
+                                </>
                               ) : (
                                 <div>
                                   <label style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>السبب</label>
@@ -372,7 +390,6 @@ export default function QuickEntryPage() {
                         </td>
                       )
                     })}
-
                     <td style={{ padding: '8px 12px', textAlign: 'center', borderRight: '1px solid var(--border)' }}>
                       <div style={{ color: 'var(--accent)', fontWeight: 700 }}>{weekTotal} س</div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{weekCost.toLocaleString('ar-SA', { maximumFractionDigits: 0 })} ر</div>
@@ -380,12 +397,11 @@ export default function QuickEntryPage() {
                   </tr>
                 )
               })}
-
               {/* Total row */}
               <tr style={{ background: 'var(--accent-dim2)', borderTop: '2px solid var(--accent)' }}>
                 <td style={{ padding: '10px 12px', fontWeight: 700, position: 'sticky', right: 0, background: 'var(--accent-dim2)' }}>الإجمالي</td>
                 {days.map((day, i) => {
-                  const dateStr = format(day, 'yyyy-MM-dd')
+                  const dateStr  = format(day, 'yyyy-MM-dd')
                   const dayTotal = equipment.reduce((s, eq) => {
                     const cell = grid[eq.id]?.[dateStr]
                     return s + (cell?.active && cell?.status === 'working' ? (parseFloat(cell?.hours) || 0) : 0)

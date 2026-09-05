@@ -289,7 +289,7 @@ export default function ClientReportPage() {
           }
         }
         byEq[log.equipmentId].logs.push({ ...log, clientRate: getClientRate(log) })
-        if (log.status === 'working') byEq[log.equipmentId].actualHours += log.hours || 0
+        if (log.status === 'working') byEq[log.equipmentId].actualHours += log.clientHours || 0
       })
 
       const rows = Object.values(byEq)
