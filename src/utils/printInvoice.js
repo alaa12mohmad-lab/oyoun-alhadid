@@ -61,7 +61,10 @@ function invoiceBodyHtml(inv, showPrice) {
     const logRows = (eq.logs || []).map((log, i) => `
       <tr>
         <td>${i+1}</td>
-        <td>${log.date}</td>
+        <td>
+          ${log.date}
+          ${log.isLastWorkingDay ? '<div style="color:#e05050;font-weight:700;font-size:9px">🔴 آخر يوم عمل</div>' : ''}
+        </td>
         <td>${log.status==='working'?'شغالة':log.status==='breakdown'?'عطل':log.status==='maintenance'?'صيانة':'راحة'}</td>
         <td>${log.hours > 0 ? log.hours : '—'}</td>
         ${showPrice ? `<td>${log.effectiveRate > 0 ? log.effectiveRate : '—'}</td><td style="font-weight:600">${log.cost > 0 ? (log.cost).toLocaleString('ar-SA',{maximumFractionDigits:0}) : '—'}</td>` : ''}
