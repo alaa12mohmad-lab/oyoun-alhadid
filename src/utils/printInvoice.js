@@ -53,7 +53,7 @@ function invoiceBodyHtml(inv, showPrice) {
       <td>${eq.type || '—'}</td>
       <td>${eq.siteName || '—'}</td>
       <td style="font-weight:700">${eq.totalHours}</td>
-      ${showPrice ? `<td>${eq.hourlyRate}</td><td style="font-weight:700;color:#e8a020">${(eq.totalCost||0).toLocaleString('ar-SA', {maximumFractionDigits:0})}</td>` : ''}
+      ${showPrice ? `<td>${eq.hourlyRate}</td><td style="font-weight:700;color:#e8a020">${(eq.totalCost||0).toLocaleString('ar-SA',{maximumFractionDigits:0})}</td><td>${eq.transport>0?(eq.transport).toLocaleString('ar-SA',{maximumFractionDigits:0}):'—'}</td><td style="font-weight:800">${((eq.totalCost||0)+(eq.transport||0)).toLocaleString('ar-SA',{maximumFractionDigits:0})}</td>` : ''}
     </tr>
   `).join('')
 
@@ -140,7 +140,7 @@ function invoiceBodyHtml(inv, showPrice) {
           <tr class="inv-total-row">
             <td colspan="4">الإجمالي</td>
             <td>${inv.grandHours}</td>
-            ${showPrice ? `<td></td><td style="color:#e8a020">${(inv.grandCost||0).toLocaleString('ar-SA',{maximumFractionDigits:0})}</td>` : ''}
+            ${showPrice ? `<td></td><td style="color:#e8a020">${(inv.grandCost||0).toLocaleString('ar-SA',{maximumFractionDigits:0})}</td><td style="color:#e8a020">${(inv.grandTransport||0).toLocaleString('ar-SA',{maximumFractionDigits:0})}</td><td style="font-weight:800;color:#1a3a5c">${((inv.grandCost||0)+(inv.grandTransport||0)).toLocaleString('ar-SA',{maximumFractionDigits:0})}</td>` : ''}
           </tr>
         </tbody>
       </table>
