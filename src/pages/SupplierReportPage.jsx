@@ -229,7 +229,8 @@ export default function SupplierReportPage() {
           ...eq.logs.map((l,i) => [i+1,l.date,l.status==='working'?'شغالة':l.status==='breakdown'?'عطل':'صيانة',l.hours||'—',l.effectiveRate,l.cost>0?l.cost.toFixed(2):'—',l.notes||'']),
           [],['','الإجمالي','',eq.totalHours,'',eq.totalCost.toFixed(2),''],
         ]
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), eq.name.substring(0,28))
+        const sheetName = eq.name.replace(/[:\\\/\?\*\[\]]/g, '').substring(0, 28)
+XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheetName)
       })
       XLSX.writeFile(wb, `مسودة-${reportData.supplier?.name}-${filters.dateFrom}.xlsx`)
     })
